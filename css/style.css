@@ -1,0 +1,246 @@
+/* 
+ * style.css - การจัดสไตล์สำหรับหน้าจอและการพิมพ์เอกสาร PDF (Sarabun Standard)
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
+:root {
+  --primary-color: #2563eb;
+  --primary-hover: #1d4ed8;
+  --font-ui: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-doc: 'Sarabun', 'TH Sarabun New', sans-serif;
+}
+
+body {
+  font-family: var(--font-ui);
+  background-color: #f8fafc;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(245, 158, 11, 0.03) 0px, transparent 50%);
+  background-attachment: fixed;
+  color: #1e293b;
+  min-height: 100vh;
+}
+
+/* -------------------------------------------------------------
+ * Modern Glassmorphism & Micro-interaction Design System
+ * ------------------------------------------------------------- */
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
+}
+
+.glass-card-subtle {
+  background: rgba(248, 250, 252, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(226, 232, 240, 0.7);
+}
+
+/* Hover Lift Effect (inspired by Framer Motion whileHover={{ y: -5 }}) */
+.hover-lift {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s ease;
+  will-change: transform, box-shadow;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08), 0 4px 10px -2px rgba(15, 23, 42, 0.04);
+}
+
+.hover-lift-sm {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.18s ease;
+  will-change: transform, box-shadow;
+}
+.hover-lift-sm:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 4px -1px rgba(15, 23, 42, 0.03);
+}
+
+/* Subtle button press feedback */
+.btn-press:active {
+  transform: scale(0.97);
+}
+
+/* Shimmer pulse for active status */
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+.animate-subtle-pulse {
+  animation: subtle-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Document font */
+.font-doc {
+  font-family: var(--font-doc);
+}
+
+/* Custom Scrollbar for Spreadsheet */
+.sheet-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.sheet-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.sheet-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.sheet-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Sheet Grid styling */
+.sheet-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.sheet-table th, .sheet-table td {
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.sheet-table th:first-child, .sheet-table td:first-child {
+  border-left: 1px solid #e2e8f0;
+}
+.sheet-table tr:first-child th {
+  border-top: 1px solid #e2e8f0;
+}
+
+/* Sheet cell input */
+.sheet-cell-input {
+  width: 100%;
+  height: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  outline: none;
+  font-size: 0.85rem;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+.sheet-cell-input:focus {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Official Document Sheet Layout */
+.a4-page-preview {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 12mm 15mm 12mm 15mm;
+  margin: 0 auto;
+  background: #ffffff;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  font-family: var(--font-doc);
+  font-size: 15px;
+  line-height: 1.45;
+  color: #000000;
+  position: relative;
+}
+
+/* Official Document Table */
+.gov-table {
+  width: 100%;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  table-layout: fixed !important;
+  margin-top: 6px;
+  margin-bottom: 8px;
+  font-family: var(--font-doc);
+  font-size: 13.5px;
+}
+.gov-table,
+.gov-table th,
+.gov-table td {
+  border: 0.5pt solid #000000 !important;
+  padding: 4px 3px;
+  text-align: center;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+.gov-table th {
+  font-weight: bold;
+  background-color: #ffffff;
+}
+
+/* Vertical Text for Lunch Break */
+.vertical-text {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  letter-spacing: 2px;
+  padding: 6px 2px;
+  white-space: nowrap;
+}
+
+/* Screen Print Mode Container */
+#print-section {
+  display: none;
+}
+
+/* -------------------------------------------------------------
+ * PRINT MEDIA STYLES (@media print)
+ * ------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 12mm 8mm 12mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: var(--font-doc) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide non-printable app UI */
+  #app-header,
+  #app-tabs,
+  #app-view-container,
+  #pdf-preview-modal,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Show only the print section */
+  #print-section {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .a4-page-preview {
+    width: 100% !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    margin: 0 0 10mm 0 !important;
+    box-shadow: none !important;
+    page-break-after: always !important;
+    page-break-inside: avoid !important;
+  }
+
+  .a4-page-preview:last-child {
+    page-break-after: avoid !important;
+    margin-bottom: 0 !important;
+  }
+
+  .gov-table {
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+  .gov-table,
+  .gov-table th,
+  .gov-table td {
+    border: 0.5pt solid #000000 !important;
+  }
+}

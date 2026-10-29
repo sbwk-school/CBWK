@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // กฎสำหรับระบบจัดสอนแทน โรงเรียนชุมชนบ้านวังพิกุล
+    // อนุญาตให้อ่านและบันทึกข้อมูลได้ทุกเครื่องที่เปิดเว็บแอพนี้
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
