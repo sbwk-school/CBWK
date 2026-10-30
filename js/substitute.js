@@ -4,6 +4,11 @@
 
 (function(global) {
   const { 
+    DEFAULT_SCHOOL_SETTINGS = {},
+    DEFAULT_PERIODS = [],
+    TEACHER_NAMES = [],
+    DEFAULT_TEACHER_GRADES = {},
+    INITIAL_TIMETABLES = {},
     formatThaiDate, 
     parseSubjectAndRoom,
     GRADE_BANDS = [
@@ -20,6 +25,8 @@
       "ศุกร์": { name: "วันศุกร์", colorName: "ฟ้า", activeClass: "bg-sky-200 text-sky-950 border-sky-400 shadow-xs ring-2 ring-sky-400/50 font-black", inactiveClass: "bg-sky-50/80 text-sky-900 border-sky-200/80 hover:bg-sky-100 hover:border-sky-300", dotClass: "bg-sky-500", badgeClass: "bg-sky-100 text-sky-900 border-sky-300" }
     }
   } = (global.TeachData || {});
+
+  const db = (global.TeachDatabase || global.TeachSupabase || {});
   const { 
     getSchoolSettings, 
     getPeriods, 
@@ -27,10 +34,22 @@
     getTeacherGrades,
     getAllTimetables, 
     getSubstitutions, 
-    recordSubstitutions 
-  } = (global.TeachDatabase || global.TeachSupabase);
+    recordSubstitutions,
+    deleteSubstitutionsForTeacher
+  } = db;
 
   let currentDate = new Date();
+  
+  function toLocalISODate(d) {
+    if (!d || !(d instanceof Date) || isNaN(d.getTime())) {
+      d = new Date();
+    }
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   let absentTeachersList = []; 
   let cachedTimetables = {};
   let cachedTeachers = [];
@@ -48,20 +67,135 @@
     const container = document.getElementById('view-substitute');
     if (!container) return;
 
-    cachedSettings = await getSchoolSettings();
-    cachedPeriods = await getPeriods();
-    cachedTeachers = await getTeachers();
-    if (getTeacherGrades) {
-      cachedTeacherGrades = await getTeacherGrades();
-    } else {
-      cachedTeacherGrades = {};
-    }
-    cachedTimetables = await getAllTimetables();
-    cachedSubstitutions = await getSubstitutions();
+    try {
+      // 1. FAST LOCAL SYNC: ดึงข้อมูลจาก LocalStorage / Default ทันทีแบบ Sync ไม่รอ Network
+      // เพื่อให้หน้าเว็บเรนเดอร์ใน 0ms ทันที ไม่มีหน้าขาวเด็ดขาด!
+      cachedSettings = { ...(DEFAULT_SCHOOL_SETTINGS || {}) };
+      cachedPeriods = [...(DEFAULT_PERIODS || [])];
+      cachedTeachers = [...(TEACHER_NAMES || [])];
+      cachedTeacherGrades = { ...(DEFAULT_TEACHER_GRADES || {}) };
+      cachedTimetables = JSON.parse(JSON.stringify(INITIAL_TIMETABLES || {}));
+      cachedSubstitutions = [];
 
-    loadSavedSubstitutionsForCurrentDate();
-    renderSubstituteUI();
+      try {
+        const localSettings = localStorage.getItem('teach_school_settings');
+        if (localSettings) cachedSettings = { ...cachedSettings, ...JSON.parse(localSettings) };
+
+        const localPeriods = localStorage.getItem('teach_periods');
+        if (localPeriods) {
+          const parsed = JSON.parse(localPeriods);
+          if (Array.isArray(parsed) && parsed.length > 0) cachedPeriods = parsed;
+        }
+
+        const localTeachers = localStorage.getItem('teach_teachers');
+        if (localTeachers) {
+          const parsed = JSON.parse(localTeachers);
+          if (Array.isArray(parsed) && parsed.length > 0) cachedTeachers = parsed;
+        }
+
+        const localGrades = localStorage.getItem('teach_teacher_grades');
+        if (localGrades) cachedTeacherGrades = { ...cachedTeacherGrades, ...JSON.parse(localGrades) };
+
+        const localTimetables = localStorage.getItem('teach_timetables');
+        if (localTimetables) {
+          const parsed = JSON.parse(localTimetables);
+          if (parsed && typeof parsed === 'object') cachedTimetables = parsed;
+        }
+
+        const localSubs = localStorage.getItem('teach_substitutions');
+        if (localSubs) {
+          const parsed = JSON.parse(localSubs);
+          if (Array.isArray(parsed)) cachedSubstitutions = parsed;
+        }
+      } catch (localReadErr) {
+        console.warn("LocalStorage quick-load note:", localReadErr);
+      }
+
+      // เรนเดอร์หน้าจอในทันทีแบบ 0ms (ไม่มีหน้าขาวเด็ดขาด)
+      loadSavedSubstitutionsForCurrentDate();
+      renderSubstituteUI();
+
+      // 2. CLOUD HYDRATION: ดึงข้อมูลล่าสุดจาก Cloud Firestore ใน Background (ไม่บล็อก UI)
+      (async () => {
+        try {
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Cloud fetch timeout")), 4500)
+          );
+
+          const fetchAllPromise = Promise.all([
+            getSchoolSettings ? getSchoolSettings().catch(() => null) : Promise.resolve(null),
+            getPeriods ? getPeriods().catch(() => null) : Promise.resolve(null),
+            getTeachers ? getTeachers().catch(() => null) : Promise.resolve(null),
+            getTeacherGrades ? getTeacherGrades().catch(() => null) : Promise.resolve(null),
+            getAllTimetables ? getAllTimetables().catch(() => null) : Promise.resolve(null),
+            getSubstitutions ? getSubstitutions().catch(() => null) : Promise.resolve(null)
+          ]);
+
+          const [settings, periods, teachers, grades, timetables, substitutions] = await Promise.race([
+            fetchAllPromise,
+            timeoutPromise
+          ]);
+
+          let needsRerender = false;
+          if (settings && typeof settings === 'object') {
+            cachedSettings = { ...cachedSettings, ...settings };
+            needsRerender = true;
+          }
+          if (Array.isArray(periods) && periods.length > 0) {
+            cachedPeriods = periods;
+            needsRerender = true;
+          }
+          if (Array.isArray(teachers) && teachers.length > 0) {
+            cachedTeachers = teachers;
+            needsRerender = true;
+          }
+          if (grades && typeof grades === 'object') {
+            cachedTeacherGrades = { ...cachedTeacherGrades, ...grades };
+            needsRerender = true;
+          }
+          if (timetables && typeof timetables === 'object') {
+            cachedTimetables = timetables;
+            needsRerender = true;
+          }
+          if (Array.isArray(substitutions)) {
+            cachedSubstitutions = substitutions;
+            needsRerender = true;
+          }
+
+          if (needsRerender) {
+            loadSavedSubstitutionsForCurrentDate();
+            renderSubstituteUI();
+          }
+        } catch (cloudErr) {
+          console.warn("Background cloud sync note:", cloudErr.message || cloudErr);
+        }
+      })();
+
+    } catch (fatalErr) {
+      console.error("Critical error in initSubstitutePage:", fatalErr);
+      if (container) {
+        container.innerHTML = `
+          <div class="max-w-xl mx-auto p-6 bg-rose-50 border border-rose-200 rounded-2xl text-rose-900 mt-6 shadow-sm">
+            <h3 class="font-bold text-base flex items-center gap-2 mb-2 text-rose-700">
+              <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+              <span>กำลังกู้คืนข้อมูลหน้าจัดสอนแทน...</span>
+            </h3>
+            <p class="text-xs text-rose-600 mb-4">${fatalErr.message || fatalErr}</p>
+            <button onclick="location.reload()" class="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition-all cursor-pointer">
+              รีเฟรชหน้าเว็บ
+            </button>
+          </div>
+        `;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
   }
+
+  // ส่งออก TeachSubstitute ทันทีตั้งแต่ต้นฟังก์ชัน เพื่อให้ app.js เรียกใช้งานได้เสมอ
+  global.TeachSubstitute = {
+    initSubstitutePage,
+    generateOfficialDocumentPagesHtml
+  };
 
   function showToast(message, type = 'success') {
     if (global.TeachApp && global.TeachApp.showToast) {
@@ -87,12 +221,13 @@
   }
 
   function loadSavedSubstitutionsForCurrentDate() {
-    const dateStr = currentDate.toISOString().split('T')[0];
-    const recordsToday = cachedSubstitutions.filter(r => r.date === dateStr);
+    const dateStr = toLocalISODate(currentDate);
+    const recordsToday = (cachedSubstitutions || []).filter(r => r && r.date === dateStr);
 
     if (recordsToday.length > 0) {
       const map = {};
       recordsToday.forEach(r => {
+        if (!r || !r.absentTeacher) return;
         if (!map[r.absentTeacher]) {
           map[r.absentTeacher] = {
             teacherName: r.absentTeacher,
@@ -104,7 +239,7 @@
         }
         const item = map[r.absentTeacher];
         item.leaveType = r.leaveType || item.leaveType;
-        if (r.periodId && r.periodId > 0 && item.periods[r.periodId]) {
+        if (r.periodId && r.periodId > 0 && item.periods && item.periods[r.periodId]) {
           if (r.substituteTeacher) item.periods[r.periodId].substituteTeacher = r.substituteTeacher;
           if (r.subject) item.periods[r.periodId].subject = r.subject;
           if (r.room) item.periods[r.periodId].room = r.room;
@@ -117,7 +252,7 @@
   }
 
   function syncSavedStateForTeacher(item) {
-    const dateStr = currentDate.toISOString().split('T')[0];
+    const dateStr = toLocalISODate(currentDate);
     const records = cachedSubstitutions.filter(r => r.date === dateStr && r.absentTeacher === item.teacherName);
     if (records.length > 0) {
       item.leaveType = records[0].leaveType || item.leaveType;
@@ -152,7 +287,7 @@
     if (!item) return;
 
     const dateInfo = formatThaiDate(currentDate);
-    const dateStr = currentDate.toISOString().split('T')[0];
+    const dateStr = toLocalISODate(currentDate);
     const records = [];
 
     const periodsList = Object.values(item.periods || {});
@@ -205,122 +340,143 @@
 
   function renderSubstituteUI() {
     const container = document.getElementById('view-substitute');
-    const dateInfo = formatThaiDate(currentDate);
-    const dayConfig = (global.TeachData && global.TeachData.THAI_DAY_CONFIG && global.TeachData.THAI_DAY_CONFIG[dateInfo.dayOfWeek]) || {
-      dotClass: "bg-indigo-500",
-      badgeClass: "bg-indigo-100 text-indigo-900 border-indigo-200"
-    };
+    if (!container) return;
 
-    container.innerHTML = `
-      <div class="max-w-5xl mx-auto space-y-6 pb-16">
-        
-        <!-- Card ส่วนหัวและเลือกวัน (Glass Card) -->
-        <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 p-5 sm:p-6">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-            <div>
-              <h2 class="text-xl sm:text-2xl font-bold text-slate-800 flex items-center gap-2.5">
-                <span class="p-2.5 bg-gradient-to-tr from-indigo-500 to-blue-600 text-white rounded-2xl shadow-sm shadow-indigo-500/20">
-                  <i data-lucide="calendar-check" class="w-5 h-5 sm:w-6 sm:h-6"></i>
-                </span>
-                ระบบจัดสอนแทนประจำวัน
-              </h2>
-              <p class="text-xs sm:text-sm text-slate-500 mt-1">${cachedSettings.schoolName} • เลือกครูที่ลาเพื่อจัดครูที่มีคาบว่างเข้าสอนแทน</p>
+    try {
+      const dateInfo = formatThaiDate(currentDate);
+      const dayConfig = (global.TeachData && global.TeachData.THAI_DAY_CONFIG && global.TeachData.THAI_DAY_CONFIG[dateInfo.dayOfWeek]) || {
+        dotClass: "bg-indigo-500",
+        badgeClass: "bg-indigo-100 text-indigo-900 border-indigo-200"
+      };
+      const schoolName = (cachedSettings && cachedSettings.schoolName) || "โรงเรียนชุมชนบ้านวังพิกุล";
+
+      container.innerHTML = `
+        <div class="max-w-5xl mx-auto space-y-6 pb-16">
+          
+          <!-- Card ส่วนหัวและเลือกวัน (Glass Card) -->
+          <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 p-5 sm:p-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div>
+                <h2 class="text-xl sm:text-2xl font-bold text-slate-800 flex items-center gap-2.5">
+                  <span class="p-2.5 bg-gradient-to-tr from-indigo-500 to-blue-600 text-white rounded-2xl shadow-sm shadow-indigo-500/20">
+                    <i data-lucide="calendar-check" class="w-5 h-5 sm:w-6 sm:h-6"></i>
+                  </span>
+                  ระบบจัดสอนแทนประจำวัน
+                </h2>
+                <p class="text-xs sm:text-sm text-slate-500 mt-1">${schoolName} • เลือกครูที่ลาเพื่อจัดครูที่มีคาบว่างเข้าสอนแทน</p>
+              </div>
+              
+              <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
+                <div class="flex items-center gap-2 bg-white/90 border border-slate-200/90 rounded-xl px-3 py-1.5 shadow-2xs hover:border-indigo-300 transition-colors">
+                  <span class="text-xs font-semibold text-slate-500">เลือกวันที่:</span>
+                  <input type="date" id="sub-date-input" 
+                    value="${toLocalISODate(currentDate)}" 
+                    class="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+                </div>
+
+                <button type="button" id="btn-view-day-timetable" 
+                  class="btn-press hover-lift-sm px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border shadow-2xs cursor-pointer transition-all ${dayConfig.badgeClass}"
+                  title="คลิกเพื่อเรียกดูตารางสอนวัน${dateInfo.dayOfWeek} (สำหรับพิจารณาจัดสอนแทน)">
+                  <span class="w-2.5 h-2.5 rounded-full ${dayConfig.dotClass}"></span>
+                  <span>วัน${dateInfo.dayOfWeek}</span>
+                  <span class="inline-flex items-center gap-1 text-[11px] font-semibold opacity-85 pl-1.5 border-l border-current/25">
+                    <i data-lucide="sheet" class="w-3.5 h-3.5"></i>
+                    <span>ดูตารางสอน</span>
+                  </span>
+                </button>
+              </div>
             </div>
-            
-            <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
-              <div class="flex items-center gap-2 bg-white/90 border border-slate-200/90 rounded-xl px-3 py-1.5 shadow-2xs hover:border-indigo-300 transition-colors">
-                <span class="text-xs font-semibold text-slate-500">เลือกวันที่:</span>
-                <input type="date" id="sub-date-input" 
-                  value="${currentDate.toISOString().split('T')[0]}" 
-                  class="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+
+            <!-- รายการครูที่ลา -->
+            <div class="mt-5">
+              <div class="flex items-center justify-between mb-3.5">
+                <h3 class="text-sm sm:text-base font-bold text-slate-700 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                  <span>รายชื่อครูที่ลาในวันนี้</span>
+                  <span id="absent-count-badge" class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/80">${absentTeachersList.length} ท่าน</span>
+                </h3>
+                <button id="btn-add-absent-teacher" 
+                  class="btn-press hover-lift-sm inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200/60 transition-all cursor-pointer">
+                  <i data-lucide="plus" class="w-4 h-4"></i>
+                  เพิ่มครู
+                </button>
               </div>
 
-              <button type="button" id="btn-view-day-timetable" 
-                class="btn-press hover-lift-sm px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 border shadow-2xs cursor-pointer transition-all ${dayConfig.badgeClass}"
-                title="คลิกเพื่อเรียกดูตารางสอนวัน${dateInfo.dayOfWeek} (สำหรับพิจารณาจัดสอนแทน)">
-                <span class="w-2.5 h-2.5 rounded-full ${dayConfig.dotClass}"></span>
-                <span>วัน${dateInfo.dayOfWeek}</span>
-                <span class="inline-flex items-center gap-1 text-[11px] font-semibold opacity-85 pl-1.5 border-l border-current/25">
-                  <i data-lucide="sheet" class="w-3.5 h-3.5"></i>
-                  <span>ดูตารางสอน</span>
-                </span>
-              </button>
+              <div id="absent-teachers-container" class="space-y-4">
+                <!-- Render การ์ดของครูที่ลาแต่ละท่านที่นี่ -->
+              </div>
             </div>
           </div>
 
-          <!-- รายการครูที่ลา -->
-          <div class="mt-5">
-            <div class="flex items-center justify-between mb-3.5">
-              <h3 class="text-sm sm:text-base font-bold text-slate-700 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                <span>รายชื่อครูที่ลาในวันนี้</span>
-                <span id="absent-count-badge" class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/80">${absentTeachersList.length} ท่าน</span>
-              </h3>
-              <button id="btn-add-absent-teacher" 
-                class="btn-press hover-lift-sm inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200/60 transition-all cursor-pointer">
-                <i data-lucide="plus" class="w-4 h-4"></i>
-                เพิ่มครู
-              </button>
-            </div>
-
-            <div id="absent-teachers-container" class="space-y-4">
-              <!-- Render การ์ดของครูที่ลาแต่ละท่านที่นี่ -->
-            </div>
+          <!-- Floating Action Button (FAB): ดูตัวอย่าง & พิมพ์ PDF (Hover Lift + Glass Glow) -->
+          <div class="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 z-40 no-print animate-in fade-in slide-in-from-bottom-3 duration-300">
+            <button id="btn-preview-pdf" 
+              class="btn-press hover-lift group inline-flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-sm rounded-full shadow-lg shadow-indigo-500/25 hover:shadow-xl transition-all cursor-pointer border border-white/20 ring-4 ring-indigo-500/20 backdrop-blur-md"
+              title="ดูตัวอย่างเอกสารขนาด A4 และสั่งพิมพ์ PDF">
+              <i data-lucide="file-text" class="w-5 h-5 text-indigo-100 group-hover:text-white transition-colors"></i>
+              <span>ดูตัวอย่าง & พิมพ์ PDF</span>
+            </button>
           </div>
+
         </div>
+      `;
 
-        <!-- Floating Action Button (FAB): ดูตัวอย่าง & พิมพ์ PDF (Hover Lift + Glass Glow) -->
-        <div class="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 z-40 no-print animate-in fade-in slide-in-from-bottom-3 duration-300">
-          <button id="btn-preview-pdf" 
-            class="btn-press hover-lift group inline-flex items-center gap-2.5 px-6 py-3.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-sm rounded-full shadow-lg shadow-indigo-500/25 hover:shadow-xl transition-all cursor-pointer border border-white/20 ring-4 ring-indigo-500/20 backdrop-blur-md"
-            title="ดูตัวอย่างเอกสารขนาด A4 และสั่งพิมพ์ PDF">
-            <i data-lucide="file-text" class="w-5 h-5 text-indigo-100 group-hover:text-white transition-colors"></i>
-            <span>ดูตัวอย่าง & พิมพ์ PDF</span>
-          </button>
-        </div>
+      const dateInput = document.getElementById('sub-date-input');
+      if (dateInput) {
+        dateInput.addEventListener('change', async (e) => {
+          if (e.target.value) {
+            const [y, m, d] = e.target.value.split('-').map(Number);
+            currentDate = new Date(y, m - 1, d, 12, 0, 0);
+          }
+          loadSavedSubstitutionsForCurrentDate();
+          renderSubstituteUI();
+        });
+      }
 
-      </div>
-    `;
+      const btnViewTimetable = document.getElementById('btn-view-day-timetable');
+      if (btnViewTimetable) {
+        btnViewTimetable.addEventListener('click', () => {
+          openDayTimetableModal(dateInfo.dayOfWeek);
+        });
+      }
 
-    const dateInput = document.getElementById('sub-date-input');
-    dateInput.addEventListener('change', async (e) => {
-      currentDate = new Date(e.target.value);
-      loadSavedSubstitutionsForCurrentDate();
-      renderSubstituteUI();
-    });
+      const btnAddAbsent = document.getElementById('btn-add-absent-teacher');
+      if (btnAddAbsent) {
+        btnAddAbsent.addEventListener('click', () => {
+          addAbsentTeacher();
+        });
+      }
 
-    const btnViewTimetable = document.getElementById('btn-view-day-timetable');
-    if (btnViewTimetable) {
-      btnViewTimetable.addEventListener('click', () => {
-        openDayTimetableModal(dateInfo.dayOfWeek);
-      });
+      const btnPreviewPdf = document.getElementById('btn-preview-pdf');
+      if (btnPreviewPdf) {
+        btnPreviewPdf.addEventListener('click', () => {
+          openPdfPreviewModal();
+        });
+      }
+
+      const btnSaveSub = document.getElementById('btn-save-substitutions');
+      if (btnSaveSub) {
+        btnSaveSub.addEventListener('click', () => {
+          saveCurrentSubstitutions();
+        });
+      }
+
+      renderAbsentTeachersCards();
+      if (window.lucide) window.lucide.createIcons();
+    } catch (err) {
+      console.error("renderSubstituteUI error:", err);
     }
-
-    document.getElementById('btn-add-absent-teacher').addEventListener('click', () => {
-      addAbsentTeacher();
-    });
-
-    const btnPreviewPdf = document.getElementById('btn-preview-pdf');
-    if (btnPreviewPdf) {
-      btnPreviewPdf.addEventListener('click', () => {
-        openPdfPreviewModal();
-      });
-    }
-
-    const btnSaveSub = document.getElementById('btn-save-substitutions');
-    if (btnSaveSub) {
-      btnSaveSub.addEventListener('click', () => {
-        saveCurrentSubstitutions();
-      });
-    }
-
-    renderAbsentTeachersCards();
-    if (window.lucide) window.lucide.createIcons();
   }
 
   function addAbsentTeacher() {
     const availableTeachers = cachedTeachers.filter(t => !absentTeachersList.some(item => item.teacherName === t));
-    const defaultTeacher = availableTeachers.length > 0 ? availableTeachers[0] : cachedTeachers[0];
+    if (availableTeachers.length === 0) {
+      if (global.TeachApp && global.TeachApp.showToast) {
+        global.TeachApp.showToast("คุณครูทุกคนในระบบถูกเลือกในรายการลาหมดแล้ว", "warning");
+      }
+      return;
+    }
+    const defaultTeacher = availableTeachers[0];
 
     const newAbsentItem = {
       teacherName: defaultTeacher,
@@ -350,26 +506,29 @@
   }
 
   function populateTeacherPeriods(item) {
+    if (!item) return;
     const dateInfo = formatThaiDate(currentDate);
     const dayName = dateInfo.dayOfWeek;
-    const dayTimetable = cachedTimetables[dayName] || [];
-    const teacherIndex = cachedTeachers.indexOf(item.teacherName);
+    const dayTimetable = (cachedTimetables && cachedTimetables[dayName]) || [];
+    const teacherList = Array.isArray(cachedTeachers) ? cachedTeachers : [];
+    const teacherIndex = teacherList.indexOf(item.teacherName);
+    const periodsList = Array.isArray(cachedPeriods) ? cachedPeriods : [];
 
-    item.periods = {};
+    item.periods = item.periods || {};
     if (teacherIndex >= 0 && dayTimetable[teacherIndex]) {
-      const teacherSchedule = dayTimetable[teacherIndex];
-      cachedPeriods.forEach((period, pIdx) => {
-        if (!period.isBreak) {
+      const teacherSchedule = dayTimetable[teacherIndex] || [];
+      periodsList.forEach((period, pIdx) => {
+        if (period && !period.isBreak) {
           const rawClass = teacherSchedule[pIdx] || "";
-          if (rawClass.trim()) {
-            const parsed = parseSubjectAndRoom(rawClass);
+          if (rawClass && String(rawClass).trim()) {
+            const parsed = parseSubjectAndRoom ? parseSubjectAndRoom(rawClass) : { subject: rawClass, room: "" };
             item.periods[period.id] = {
               periodId: period.id,
-              periodName: period.name,
-              periodTime: period.time,
-              subject: parsed.subject,
-              room: parsed.room,
-              substituteTeacher: ""
+              periodName: period.name || `คาบ ${period.id}`,
+              periodTime: period.time || "",
+              subject: parsed.subject || "",
+              room: parsed.room || "",
+              substituteTeacher: (item.periods[period.id] && item.periods[period.id].substituteTeacher) || ""
             };
           }
         }
@@ -380,6 +539,9 @@
   function renderAbsentTeachersCards() {
     const container = document.getElementById('absent-teachers-container');
     if (!container) return;
+
+    const countBadge = document.getElementById('absent-count-badge');
+    if (countBadge) countBadge.innerText = `${absentTeachersList.length} ท่าน`;
 
     if (absentTeachersList.length === 0) {
       container.innerHTML = `
@@ -395,9 +557,12 @@
 
     const dateInfo = formatThaiDate(currentDate);
     const dayName = dateInfo.dayOfWeek;
+    const teacherList = Array.isArray(cachedTeachers) ? cachedTeachers : [];
+    const gradesMap = cachedTeacherGrades || {};
 
     const cardsHtml = absentTeachersList.map((item, index) => {
-      const hasPeriods = Object.keys(item.periods).length > 0;
+      const itemPeriods = (item && item.periods) || {};
+      const hasPeriods = Object.keys(itemPeriods).length > 0;
 
       return `
         <div class="absent-teacher-card glass-card hover-lift border ${item.isSaved ? 'border-emerald-300/80 ring-1 ring-emerald-400/20' : 'border-slate-200/80'} rounded-2xl shadow-xs overflow-hidden transition-all">
@@ -413,9 +578,10 @@
               <span class="text-xs font-bold text-slate-600 whitespace-nowrap">ครูที่ลา:</span>
               <select class="absent-teacher-select bg-white border border-slate-300/90 rounded-xl px-2.5 py-1 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs w-48 sm:w-56 cursor-pointer"
                 data-index="${index}">
-                ${cachedTeachers.map(t => {
-                  const g = cachedTeacherGrades[t] ? ` [${cachedTeacherGrades[t]}]` : '';
-                  return `<option value="${t}" ${t === item.teacherName ? 'selected' : ''}>${t}${g}</option>`;
+                ${teacherList.map(t => {
+                  const g = gradesMap[t] ? ` [${gradesMap[t]}]` : '';
+                  const isChosenByOther = absentTeachersList.some((other, oIdx) => oIdx !== index && other && other.teacherName === t);
+                  return `<option value="${t}" ${item && t === item.teacherName ? 'selected' : ''} ${isChosenByOther ? 'disabled' : ''}>${t}${g}${isChosenByOther ? ' (เลือกแล้ว)' : ''}</option>`;
                 }).join('')}
               </select>
 
@@ -473,7 +639,7 @@
               </div>
             ` : `
               <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                ${Object.values(item.periods).map(period => {
+                ${Object.values(itemPeriods).map(period => {
                   const availableTeachers = getAvailableTeachersForPeriod(dayName, period.periodId, item.teacherName);
                   const isAssigned = Boolean(period.substituteTeacher && period.substituteTeacher.trim());
                   const freeCount = availableTeachers.filter(t => t.isFree).length;
@@ -496,10 +662,10 @@
 
                       <!-- Row 2: วิชา และ ห้องเรียน (compact inline inputs) -->
                       <div class="flex items-center gap-1.5 text-xs">
-                        <input type="text" value="${period.subject}" placeholder="วิชา..." 
+                        <input type="text" value="${period.subject || ''}" placeholder="วิชา..." 
                           class="period-subject-input flex-1 min-w-0 font-bold text-slate-800 bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-500 rounded-lg px-2 py-0.5 outline-none transition-all text-xs"
-                          data-index="${index}" data-period="${period.periodId}" title="${period.subject}">
-                        <input type="text" value="${period.room}" placeholder="ห้อง..." 
+                          data-index="${index}" data-period="${period.periodId}" title="${period.subject || ''}">
+                        <input type="text" value="${period.room || ''}" placeholder="ห้อง..." 
                           class="period-room-input w-20 text-slate-600 bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-500 rounded-lg px-1.5 py-0.5 outline-none transition-all text-[11px] text-center"
                           data-index="${index}" data-period="${period.periodId}" title="${period.room || 'ห้องเรียน'}">
                       </div>
@@ -511,7 +677,7 @@
                           <option value="">-- เลือกครูสอนแทน --</option>
                           <optgroup label="ครูที่ว่างในคาบนี้ (ว่าง ${freeCount} ท่าน)">
                             ${availableTeachers.filter(t => t.isFree).map(t => {
-                              const g = cachedTeacherGrades[t.name] ? ` [${cachedTeacherGrades[t.name]}]` : '';
+                              const g = gradesMap[t.name] ? ` [${gradesMap[t.name]}]` : '';
                               return `
                                 <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
                                   ${t.name}${g} (ว่าง ${t.freePeriodsCount} คาบ)
@@ -521,7 +687,7 @@
                           </optgroup>
                           <optgroup label="ครูที่มีคาบสอนอื่น">
                             ${availableTeachers.filter(t => !t.isFree).map(t => {
-                              const g = cachedTeacherGrades[t.name] ? ` [${cachedTeacherGrades[t.name]}]` : '';
+                              const g = gradesMap[t.name] ? ` [${gradesMap[t.name]}]` : '';
                               return `
                                 <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
                                   ⚠️ ${t.name}${g} (${t.busyWith})
@@ -555,8 +721,7 @@
 
     container.innerHTML = cardsHtml + inlineAddHtml;
 
-    const countBadge = document.getElementById('absent-count-badge');
-    if (countBadge) countBadge.innerText = absentTeachersList.length;
+    if (countBadge) countBadge.innerText = `${absentTeachersList.length} ท่าน`;
 
     const btnAddInline = document.getElementById('btn-add-teacher-inline');
     if (btnAddInline) {
@@ -595,22 +760,35 @@
       btn.addEventListener('click', async (e) => {
         const idx = parseInt(e.currentTarget.dataset.index);
         const item = absentTeachersList[idx];
-        if (item && item.isSaved) {
-          if (confirm(`คุณครู ${item.teacherName} บันทึกข้อมูลแล้ว ต้องการลบออกจากฐานข้อมูลด้วยหรือไม่?`)) {
-            const dateStr = currentDate.toISOString().split('T')[0];
-            if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsForTeacher) {
-              cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsForTeacher(dateStr, item.teacherName);
-            } else {
-              const toDelete = cachedSubstitutions.filter(r => r.date === dateStr && r.absentTeacher === item.teacherName);
-              if (toDelete.length > 0) {
-                const ids = toDelete.map(r => r.id).filter(Boolean);
-                if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsBatch) {
-                  cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsBatch(ids);
-                }
+        if (!item) return;
+
+        const dateStr = toLocalISODate(currentDate);
+        const hasSavedRecords = (cachedSubstitutions || []).some(
+          r => r.date === dateStr && r.absentTeacher === item.teacherName
+        );
+
+        if (hasSavedRecords || item.isSaved) {
+          if (!confirm(`คุณครู ${item.teacherName} มีข้อมูลที่บันทึกไว้ ต้องการลบออกจากฐานข้อมูลและหน้าจัดสอนแทนใช่หรือไม่?`)) {
+            return;
+          }
+
+          if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsForTeacher) {
+            cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsForTeacher(dateStr, item.teacherName);
+          } else {
+            const toDelete = (cachedSubstitutions || []).filter(r => r.date === dateStr && r.absentTeacher === item.teacherName);
+            if (toDelete.length > 0) {
+              const ids = toDelete.map(r => r.id).filter(Boolean);
+              if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsBatch) {
+                cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsBatch(ids);
               }
             }
           }
+        } else {
+          if (!confirm(`ต้องการนำคุณครู ${item.teacherName} ออกจากรายการจัดสอนแทนใช่หรือไม่?`)) {
+            return;
+          }
         }
+
         absentTeachersList.splice(idx, 1);
         renderAbsentTeachersCards();
       });
@@ -663,18 +841,20 @@
   }
 
   function getAvailableTeachersForPeriod(dayName, periodId, absentTeacherName) {
-    const dayTimetable = cachedTimetables[dayName] || [];
+    const dayTimetable = (cachedTimetables && cachedTimetables[dayName]) || [];
     const pIndex = periodId - 1;
+    const teacherList = Array.isArray(cachedTeachers) ? cachedTeachers : [];
+    const periodsList = Array.isArray(cachedPeriods) ? cachedPeriods : [];
 
-    return cachedTeachers
-      .filter(name => name !== absentTeacherName && !absentTeachersList.some(item => item.teacherName === name))
+    return teacherList
+      .filter(name => name !== absentTeacherName && !absentTeachersList.some(item => item && item.teacherName === name))
       .map(name => {
-        const teacherIdx = cachedTeachers.indexOf(name);
+        const teacherIdx = teacherList.indexOf(name);
         const assignedClass = (teacherIdx >= 0 && dayTimetable[teacherIdx]) ? (dayTimetable[teacherIdx][pIndex] || "") : "";
         
         // ตรวจสอบว่าถูกเลือกสอนแทนในคาบนี้ไปแล้วหรือยัง
         const isAlreadySubbingInThisPeriod = absentTeachersList.some(item => 
-          item.periods && item.periods[periodId] && item.periods[periodId].substituteTeacher === name
+          item && item.periods && item.periods[periodId] && item.periods[periodId].substituteTeacher === name
         );
 
         const isFree = !assignedClass.trim() && !isAlreadySubbingInThisPeriod;
@@ -688,11 +868,11 @@
 
         // คำนวณจำนวนคาบที่ว่างในวันนั้น (ไม่รวมคาบพักกลางวัน)
         let freePeriodsCount = 0;
-        cachedPeriods.forEach((period, idx) => {
-          if (!period.isBreak) {
+        periodsList.forEach((period, idx) => {
+          if (period && !period.isBreak) {
             const raw = (teacherIdx >= 0 && dayTimetable[teacherIdx]) ? (dayTimetable[teacherIdx][idx] || "") : "";
             const isSub = absentTeachersList.some(item => 
-              item.periods && item.periods[period.id] && item.periods[period.id].substituteTeacher === name
+              item && item.periods && item.periods[period.id] && item.periods[period.id].substituteTeacher === name
             );
             if (!raw.trim() && !isSub) {
               freePeriodsCount++;
@@ -725,7 +905,7 @@
     }
 
     const dateInfo = formatThaiDate(currentDate);
-    const dateStr = currentDate.toISOString().split('T')[0];
+    const dateStr = toLocalISODate(currentDate);
     const records = [];
 
     absentTeachersList.forEach(item => {
@@ -810,10 +990,64 @@
     }
 
     return `
-      <div class="leading-tight whitespace-nowrap overflow-hidden text-ellipsis">${firstNameWithTitle}</div>
-      <div class="leading-tight whitespace-nowrap overflow-hidden text-ellipsis">${surname}</div>
+      <div class="leading-tight" style="white-space: nowrap;">${firstNameWithTitle}</div>
+      <div class="leading-tight" style="white-space: nowrap;">${surname}</div>
     `;
   }
+
+  function formatSubjectForTable(subject) {
+    if (!subject || !subject.trim()) return '';
+    let raw = subject.trim();
+    // เว้นวรรคคำว่า "เพิ่มเติม" และคำขยาย เพื่อให้ตัดคำ 2 บรรทัดได้สวยงามและพอดีกับช่อง
+    raw = raw.replace(/([^\s])เพิ่มเติม/g, '$1 เพิ่มเติม');
+    raw = raw.replace(/([^\s])เพื่อการสื่อสาร/g, '$1 เพื่อการสื่อสาร');
+    return raw;
+  }
+
+  let cachedLunchBreakPng = null;
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      cachedLunchBreakPng = null;
+    });
+  }
+
+  function getLunchBreakPng() {
+    if (cachedLunchBreakPng) return cachedLunchBreakPng;
+    try {
+      const c = document.createElement('canvas');
+      c.width = 50;
+      c.height = 300;
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.save();
+        ctx.translate(25, 150);
+        ctx.rotate(-Math.PI / 2);
+        ctx.font = 'bold 32px "Sarabun", "TH Sarabun New", sans-serif';
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        if ('letterSpacing' in ctx) {
+          ctx.letterSpacing = '3px';
+        }
+        ctx.fillText('พักกลางวัน', 0, 0);
+        ctx.restore();
+        cachedLunchBreakPng = c.toDataURL('image/png');
+        return cachedLunchBreakPng;
+      }
+    } catch (e) {
+      console.warn("Error creating lunch break PNG:", e);
+    }
+    return '';
+  }
+
+  const GRADE_DOC_SUBJECTS = {
+    'ป.1-3': 'รายงานผลการสอนแทนระดับชั้นประถมศึกษาปีที่ 1 – 3',
+    'ป.4-6': 'รายงานผลการสอนแทนระดับชั้นประถมศึกษาปีที่ 4 – 6',
+    'ม.1-3': 'รายงานผลการสอนแทนระดับชั้นมัธยมศึกษาปีที่ 1 – 3',
+    'ม.4-6': 'รายงานผลการสอนแทนระดับชั้นมัธยมศึกษาปีที่ 4 – 6',
+    'ALL': 'รายงานผลการสอนแทนระดับชั้นประถมศึกษาปีที่ 1 – มัธยมศึกษาปีที่ 3'
+  };
+  let selectedPdfDocSubjectGrade = 'ALL';
 
   function generateOfficialDocumentPagesHtml(customItems) {
     const dateInfo = formatThaiDate(currentDate);
@@ -847,6 +1081,25 @@
     }
 
     return pages.map((pageTeachers, pageIdx) => {
+      let pageDocSubject;
+      if (selectedPdfDocSubjectGrade && selectedPdfDocSubjectGrade !== 'AUTO') {
+        pageDocSubject = GRADE_DOC_SUBJECTS[selectedPdfDocSubjectGrade] || settings.docSubject;
+      } else {
+        // อัตโนมัติ: ตรวจสอบช่วงชั้นของครูที่อยู่ในหน้านี้
+        const validTeachers = pageTeachers.filter(t => t.teacherName && !t.teacherName.includes('...'));
+        if (validTeachers.length > 0) {
+          const grades = new Set(validTeachers.map(t => (cachedTeacherGrades && cachedTeacherGrades[t.teacherName]) || 'ป.1-3'));
+          if (grades.size === 1) {
+            const singleGrade = Array.from(grades)[0];
+            pageDocSubject = GRADE_DOC_SUBJECTS[singleGrade] || settings.docSubject;
+          } else {
+            pageDocSubject = GRADE_DOC_SUBJECTS['ALL'] || settings.docSubject;
+          }
+        } else {
+          pageDocSubject = settings.docSubject || GRADE_DOC_SUBJECTS['ALL'];
+        }
+      }
+
       return `
         <div class="a4-page-preview flex flex-col justify-between" id="doc-page-${pageIdx + 1}">
           
@@ -872,9 +1125,9 @@
             </div>
 
             <div class="text-[14.5px] mt-2.5 leading-[1.5] space-y-1">
-              <div class="flex">
-                <span class="w-16 font-bold">เรื่อง</span>
-                <span>${settings.docSubject}</span>
+              <div class="flex items-baseline">
+                <span class="w-16 font-bold shrink-0">เรื่อง</span>
+                <span class="doc-subject-text outline-none hover:bg-amber-50 focus:bg-amber-50 rounded px-1 transition-colors" contenteditable="true" title="คลิกเพื่อพิมพ์แก้ไขข้อความหัวข้อเรื่องได้โดยตรง">${pageDocSubject}</span>
               </div>
               <div class="flex">
                 <span class="w-16 font-bold">เรียน</span>
@@ -904,7 +1157,7 @@
             </div>
 
             <div class="text-[14.5px] mt-2.5 leading-[1.5] text-justify" style="text-indent: 15mm;">
-              ฉะนั้น เพื่อไม่ให้เกิดผลเสียต่อการจัดกิจกรรมการเรียนการสอน จึงมอบหมายให้ดำเนินการจัดกิจกรรมการเรียนการสอนแทน ดังต่อไปนี้
+              ฉะนั้น เพื่อไม่ให้เกิดผลเสียต่อการจัดกิจกรรมการเรียนการสอน จึงมอบหมายให้ดำเนินการจัดกิจกรรม<br>การเรียนการสอนแทน ดังต่อไปนี้
             </div>
 
             <div class="mt-2.5 space-y-3">
@@ -912,55 +1165,149 @@
                 return `
                   <table class="gov-table" style="table-layout: fixed; width: 100%;">
                     <tbody>
-                      <tr>
-                        <th style="width: 15%;">ชื่อครู<br>ประจำวิชา</th>
-                        <th style="width: 13%;">รายละเอียด</th>
-                        <th style="width: 11.5%;">08.30 - 09.30</th>
-                        <th style="width: 11.5%;">09.30 - 10.30</th>
-                        <th style="width: 11.5%;">10.30 - 11.30</th>
-                        <th style="width: 3.5%; font-size: 11px;" rowspan="5" class="vertical-text">พักกลางวัน</th>
-                        <th style="width: 11.5%;">12.30 - 13.30</th>
-                        <th style="width: 11.5%;">13.30 - 14.30</th>
-                        <th style="width: 11.5%;">14.30 - 15.30</th>
-                      </tr>
-                      <tr>
-                        <td rowspan="4" class="font-bold text-[11.5px] p-1 bg-white text-center">
-                          ${formatTeacherNameForTable(t.teacherName)}
-                        </td>
-                        <td class="font-semibold text-left pl-2">วิชา</td>
-                        <td>${(t.periods && t.periods[1]) ? t.periods[1].subject : ''}</td>
-                        <td>${(t.periods && t.periods[2]) ? t.periods[2].subject : ''}</td>
-                        <td>${(t.periods && t.periods[3]) ? t.periods[3].subject : ''}</td>
-                        <td>${(t.periods && t.periods[5]) ? t.periods[5].subject : ''}</td>
-                        <td>${(t.periods && t.periods[6]) ? t.periods[6].subject : ''}</td>
-                        <td>${(t.periods && t.periods[7]) ? t.periods[7].subject : ''}</td>
-                      </tr>
-                      <tr>
-                        <td class="font-semibold text-left pl-2">ห้อง</td>
-                        <td>${(t.periods && t.periods[1]) ? t.periods[1].room : ''}</td>
-                        <td>${(t.periods && t.periods[2]) ? t.periods[2].room : ''}</td>
-                        <td>${(t.periods && t.periods[3]) ? t.periods[3].room : ''}</td>
-                        <td>${(t.periods && t.periods[5]) ? t.periods[5].room : ''}</td>
-                        <td>${(t.periods && t.periods[6]) ? t.periods[6].room : ''}</td>
-                        <td>${(t.periods && t.periods[7]) ? t.periods[7].room : ''}</td>
+                      <tr style="height: 32px;">
+                        <th style="width: 15%; padding: 4px 2px !important; vertical-align: middle !important;">ชื่อครู<br>ประจำวิชา</th>
+                        <th style="width: 13%; padding: 4px 2px !important; vertical-align: middle !important;">รายละเอียด</th>
+                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">08.30 - 09.30</th>
+                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">09.30 - 10.30</th>
+                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">10.30 - 11.30</th>
+                        <th class="cell-lunch-break" style="width: 4%;" rowspan="5">
+                          <div style="display: flex; align-items: center; justify-content: center; height: 100%; min-height: 154px;">
+                            <img src="${getLunchBreakPng()}" style="width: 25px; height: 150px; display: block; margin: 0 auto; pointer-events: none;" draggable="false">
+                          </div>
+                        </th>
+                        <th style="width: 11.16%; padding: 4px 2px !important; vertical-align: middle !important;">12.30 - 13.30</th>
+                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">13.30 - 14.30</th>
+                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">14.30 - 15.30</th>
                       </tr>
                       <tr style="height: 38px;">
-                        <td class="font-semibold text-left pl-2 text-[11px] leading-tight">ชื่อครูที่เข้า<br>สอนแทน</td>
-                        <td class="text-[10px] font-bold text-blue-900 p-0.5 text-center leading-tight">${formatTeacherNameForTable((t.periods && t.periods[1]) ? t.periods[1].substituteTeacher : '')}</td>
-                        <td class="text-[10px] font-bold text-blue-900 p-0.5 text-center leading-tight">${formatTeacherNameForTable((t.periods && t.periods[2]) ? t.periods[2].substituteTeacher : '')}</td>
-                        <td class="text-[10px] font-bold text-blue-900 p-0.5 text-center leading-tight">${formatTeacherNameForTable((t.periods && t.periods[3]) ? t.periods[3].substituteTeacher : '')}</td>
-                        <td class="text-[10px] font-bold text-blue-900 p-0.5 text-center leading-tight">${formatTeacherNameForTable((t.periods && t.periods[5]) ? t.periods[5].substituteTeacher : '')}</td>
-                        <td class="text-[10px] font-bold text-blue-900 p-0.5 text-center leading-tight">${formatTeacherNameForTable((t.periods && t.periods[6]) ? t.periods[6].substituteTeacher : '')}</td>
-                        <td class="text-[10px] font-bold text-blue-900 p-0.5 text-center leading-tight">${formatTeacherNameForTable((t.periods && t.periods[7]) ? t.periods[7].substituteTeacher : '')}</td>
+                        <td rowspan="4" class="cell-teacher-name bg-white">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 154px; padding: 4px; text-align: center; font-weight: bold; font-size: 11.5px; line-height: 1.35;">
+                            ${formatTeacherNameForTable(t.teacherName)}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 38px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.2;">
+                            วิชา
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatSubjectForTable((t.periods && t.periods[1]) ? t.periods[1].subject : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatSubjectForTable((t.periods && t.periods[2]) ? t.periods[2].subject : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatSubjectForTable((t.periods && t.periods[3]) ? t.periods[3].subject : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatSubjectForTable((t.periods && t.periods[5]) ? t.periods[5].subject : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatSubjectForTable((t.periods && t.periods[6]) ? t.periods[6].subject : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatSubjectForTable((t.periods && t.periods[7]) ? t.periods[7].subject : '')}
+                          </div>
+                        </td>
                       </tr>
-                      <tr style="height: 32px;">
-                        <td class="font-semibold text-left pl-2">รับทราบ</td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
+                      <tr style="height: 26px;">
+                        <td style="height: 26px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.2;">
+                            ห้อง
+                          </div>
+                        </td>
+                        <td style="height: 26px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                            ${(t.periods && t.periods[1]) ? t.periods[1].room : ''}
+                          </div>
+                        </td>
+                        <td style="height: 26px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                            ${(t.periods && t.periods[2]) ? t.periods[2].room : ''}
+                          </div>
+                        </td>
+                        <td style="height: 26px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                            ${(t.periods && t.periods[3]) ? t.periods[3].room : ''}
+                          </div>
+                        </td>
+                        <td style="height: 26px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                            ${(t.periods && t.periods[5]) ? t.periods[5].room : ''}
+                          </div>
+                        </td>
+                        <td style="height: 26px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                            ${(t.periods && t.periods[6]) ? t.periods[6].room : ''}
+                          </div>
+                        </td>
+                        <td style="height: 26px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                            ${(t.periods && t.periods[7]) ? t.periods[7].room : ''}
+                          </div>
+                        </td>
+                      </tr>
+                      <tr style="height: 38px;">
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.15;">
+                            <span>ชื่อครูที่เข้า</span><span>สอนแทน</span>
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatTeacherNameForTable((t.periods && t.periods[1]) ? t.periods[1].substituteTeacher : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatTeacherNameForTable((t.periods && t.periods[2]) ? t.periods[2].substituteTeacher : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatTeacherNameForTable((t.periods && t.periods[3]) ? t.periods[3].substituteTeacher : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatTeacherNameForTable((t.periods && t.periods[5]) ? t.periods[5].substituteTeacher : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatTeacherNameForTable((t.periods && t.periods[6]) ? t.periods[6].substituteTeacher : '')}
+                          </div>
+                        </td>
+                        <td style="height: 38px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                            ${formatTeacherNameForTable((t.periods && t.periods[7]) ? t.periods[7].substituteTeacher : '')}
+                          </div>
+                        </td>
+                      </tr>
+                      <tr style="height: 52px;">
+                        <td style="height: 52px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 52px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.2;">
+                            รับทราบ
+                          </div>
+                        </td>
+                        <td style="height: 52px;"></td>
+                        <td style="height: 52px;"></td>
+                        <td style="height: 52px;"></td>
+                        <td style="height: 52px;"></td>
+                        <td style="height: 52px;"></td>
+                        <td style="height: 52px;"></td>
                       </tr>
                     </tbody>
                   </table>
@@ -969,20 +1316,23 @@
             </div>
           </div>
 
-          <div class="mt-4 pt-2 text-[14px]">
-            <div class="text-center w-72 mx-auto leading-relaxed">
-              <div>${settings.academicHeadRank ? settings.academicHeadRank : 'ลงชื่อ'}.......................................................</div>
+          <div class="mt-5 pt-2 text-[14px] flex justify-between items-start">
+            <div class="text-center w-[48%] leading-relaxed">
+              <div class="h-6"></div>
+              <div class="mt-8">
+                ${settings.academicHeadRank ? settings.academicHeadRank : 'ลงชื่อ'}.......................................................
+              </div>
               <div class="font-bold">(${settings.academicHeadName})</div>
               <div>${settings.academicHeadPosition}</div>
             </div>
 
-            <div class="text-center w-80 mx-auto mt-4 leading-relaxed">
-              <div class="space-x-8 text-[14.5px]">
+            <div class="text-center w-[48%] leading-relaxed">
+              <div class="space-x-8 text-[14px] h-6 flex items-center justify-center">
                 <span>☐ อนุญาต</span>
                 <span>☐ ไม่อนุญาต</span>
               </div>
-              <div class="mt-3">
-                ${settings.directorRank}.......................................................
+              <div class="mt-8">
+                ${settings.directorRank ? settings.directorRank : 'ลงชื่อ'}.......................................................
               </div>
               <div class="font-bold">(${settings.directorName})</div>
               <div>${settings.directorPosition}</div>
@@ -1037,6 +1387,7 @@
     const badge = document.getElementById('pdf-selected-count-badge');
     const drawerCountBadge = document.getElementById('pdf-drawer-count-badge');
     const btnPrintNow = document.getElementById('btn-print-now');
+    const btnSavePdf = document.getElementById('btn-save-pdf');
 
     if (!previewBody) return;
 
@@ -1049,6 +1400,10 @@
       if (btnPrintNow) {
         btnPrintNow.disabled = false;
         btnPrintNow.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+      if (btnSavePdf) {
+        btnSavePdf.disabled = false;
+        btnSavePdf.classList.remove('opacity-50', 'cursor-not-allowed');
       }
       if (window.lucide) window.lucide.createIcons();
       return;
@@ -1070,11 +1425,16 @@
       }
     }
 
+    const isDisabled = selectedItems.length === 0;
     if (btnPrintNow) {
-      const isDisabled = selectedItems.length === 0;
       btnPrintNow.disabled = isDisabled;
       btnPrintNow.classList.toggle('opacity-50', isDisabled);
       btnPrintNow.classList.toggle('cursor-not-allowed', isDisabled);
+    }
+    if (btnSavePdf) {
+      btnSavePdf.disabled = isDisabled;
+      btnSavePdf.classList.toggle('opacity-50', isDisabled);
+      btnSavePdf.classList.toggle('cursor-not-allowed', isDisabled);
     }
 
     const html = generateOfficialDocumentPagesHtml(selectedItems);
@@ -1216,6 +1576,14 @@
       });
     }
 
+    const selectDocSubject = document.getElementById('select-pdf-doc-subject');
+    if (selectDocSubject) {
+      selectDocSubject.addEventListener('change', (e) => {
+        selectedPdfDocSubjectGrade = e.target.value;
+        updatePdfPreviewDocument();
+      });
+    }
+
     document.querySelectorAll('.btn-pdf-filter-grade').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const targetGrade = e.currentTarget.dataset.grade;
@@ -1235,6 +1603,11 @@
 
     isDrawerPinned = false;
     updatePinIconState();
+
+    const selectDocSubject = document.getElementById('select-pdf-doc-subject');
+    if (selectDocSubject) {
+      selectDocSubject.value = selectedPdfDocSubjectGrade;
+    }
 
     if (Array.isArray(initialSelectedNames) && initialSelectedNames.length > 0) {
       selectedPrintTeacherNames = new Set(initialSelectedNames);

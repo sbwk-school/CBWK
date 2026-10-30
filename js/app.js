@@ -92,24 +92,62 @@
     try {
       if (tabName === 'substitute') {
         if (viewSub) viewSub.classList.remove('hidden');
-        if (typeof initSubstitutePage === 'function') {
-          initSubstitutePage();
-        } else if (global.TeachSubstitute && global.TeachSubstitute.initSubstitutePage) {
-          global.TeachSubstitute.initSubstitutePage();
+        const getFn = () => (global.TeachSubstitute && global.TeachSubstitute.initSubstitutePage) || (typeof initSubstitutePage === 'function' ? initSubstitutePage : null);
+        const fn = getFn();
+        if (fn) {
+          Promise.resolve(fn()).catch(err => {
+            console.error("initSubstitutePage rejection:", err);
+            if (viewSub && (!viewSub.children || viewSub.children.length === 0)) {
+              viewSub.innerHTML = `
+                <div class="max-w-xl mx-auto p-6 bg-rose-50 border border-rose-200 rounded-2xl text-rose-900 mt-6 shadow-sm">
+                  <h3 class="font-bold text-base flex items-center gap-2 mb-2 text-rose-700">
+                    <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                    <span>เกิดข้อผิดพลาดในการโหลดหน้าจัดสอนแทน</span>
+                  </h3>
+                  <p class="text-xs text-rose-600 mb-4">${err.message || err}</p>
+                  <button onclick="location.reload(true)" class="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 transition-all cursor-pointer">
+                    รีเฟรชหน้าเว็บ (Ctrl+F5)
+                  </button>
+                </div>
+              `;
+              if (window.lucide) window.lucide.createIcons();
+            }
+          });
+        } else {
+          // หากยังโหลดสคริปต์ไม่เสร็จ ให้รอ 150ms แล้วลองใหม่
+          setTimeout(() => {
+            const retryFn = getFn();
+            if (retryFn) {
+              Promise.resolve(retryFn()).catch(console.error);
+            } else if (viewSub && (!viewSub.children || viewSub.children.length === 0)) {
+              viewSub.innerHTML = `
+                <div class="max-w-xl mx-auto p-6 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 mt-6 shadow-sm text-center">
+                  <h3 class="font-bold text-base mb-2 text-amber-800">กำลังเชื่อมต่อหน้าจัดสอนแทน...</h3>
+                  <p class="text-xs text-amber-700 mb-4">หากหน้าจอไม่แสดงผล กรุณากดปุ่มด้านล่างเพื่อรีโหลดแบบล้างแคช</p>
+                  <button onclick="location.reload(true)" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer">
+                    รีโหลดหน้าเว็บ (Ctrl + F5)
+                  </button>
+                </div>
+              `;
+              if (window.lucide) window.lucide.createIcons();
+            }
+          }, 150);
         }
       } else if (tabName === 'teacher-stats') {
         if (viewStats) viewStats.classList.remove('hidden');
-        if (typeof initTeacherStatsPage === 'function') {
-          initTeacherStatsPage();
-        } else if (global.TeachStats && global.TeachStats.initTeacherStatsPage) {
-          global.TeachStats.initTeacherStatsPage();
+        const fn = (typeof initTeacherStatsPage === 'function') 
+          ? initTeacherStatsPage 
+          : (global.TeachStats && global.TeachStats.initTeacherStatsPage);
+        if (fn) {
+          Promise.resolve(fn()).catch(err => console.error("initTeacherStatsPage rejection:", err));
         }
       } else if (tabName === 'admin') {
         if (viewAdmin) viewAdmin.classList.remove('hidden');
-        if (typeof initAdminPage === 'function') {
-          initAdminPage();
-        } else if (global.TeachAdmin && global.TeachAdmin.initAdminPage) {
-          global.TeachAdmin.initAdminPage();
+        const fn = (typeof initAdminPage === 'function') 
+          ? initAdminPage 
+          : (global.TeachAdmin && global.TeachAdmin.initAdminPage);
+        if (fn) {
+          Promise.resolve(fn()).catch(err => console.error("initAdminPage rejection:", err));
         }
       }
     } catch (err) {
@@ -150,6 +188,7 @@
     const printModal = document.getElementById('pdf-preview-modal');
     const btnCloseModal = document.getElementById('btn-close-pdf-modal');
     const btnPrintNow = document.getElementById('btn-print-now');
+    const btnSavePdf = document.getElementById('btn-save-pdf');
 
     if (btnCloseModal && printModal) {
       btnCloseModal.addEventListener('click', () => {
@@ -158,8 +197,107 @@
       });
     }
 
+    async function directDownloadPdf() {
+      const modal = document.getElementById('pdf-preview-modal');
+      const pages = modal ? modal.querySelectorAll('#pdf-preview-content .a4-page-preview') : [];
+      if (!pages || pages.length === 0) {
+        showToast("ไม่พบหน้าเอกสารที่ต้องการบันทึก", "error");
+        return;
+      }
+
+      const dateInput = document.getElementById('sub-date-input') || document.getElementById('input-substitute-date');
+      let datePart = 'ประจำวัน';
+      if (dateInput && dateInput.value) {
+        const parts = dateInput.value.split('-');
+        if (parts.length === 3) {
+          datePart = `${parts[2]}-${parts[1]}-${parseInt(parts[0]) + 543}`;
+        }
+      }
+      const filename = `แบบบันทึกการสอนแทน_${datePart}.pdf`;
+
+      if (window.jspdf && window.html2canvas) {
+        const originalBtnHtml = btnSavePdf ? btnSavePdf.innerHTML : '';
+        if (btnSavePdf) {
+          btnSavePdf.disabled = true;
+          btnSavePdf.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>กำลังดาวน์โหลด PDF...</span>`;
+          if (window.lucide) window.lucide.createIcons();
+        }
+
+        try {
+          if (document.activeElement && typeof document.activeElement.blur === 'function') {
+            document.activeElement.blur();
+          }
+
+          if (document.fonts && document.fonts.ready) {
+            await document.fonts.ready;
+          }
+
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4',
+            compress: true
+          });
+
+          for (let i = 0; i < pages.length; i++) {
+            const pageEl = pages[i];
+            
+            // Render directly from visible preview DOM without box shadow
+            const prevShadow = pageEl.style.boxShadow;
+            pageEl.style.boxShadow = 'none';
+
+            const canvas = await window.html2canvas(pageEl, {
+              scale: 2, // 2x high-DPI crisp rendering
+              useCORS: true,
+              logging: false,
+              backgroundColor: '#ffffff'
+            });
+
+            pageEl.style.boxShadow = prevShadow;
+
+            const imgData = canvas.toDataURL('image/png');
+            if (i > 0) {
+              pdf.addPage('a4', 'portrait');
+            }
+            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+          }
+
+          // Force direct download to user's computer
+          pdf.save(filename);
+          showToast(`บันทึกและดาวน์โหลดไฟล์ "${filename}" สำเร็จเรียบร้อยครับ`, 'success');
+        } catch (err) {
+          console.error("Direct PDF export error:", err);
+          showToast("เกิดข้อผิดพลาดในการสร้าง PDF กรุณาใช้ปุ่มพิมพ์แทนครับ", "error");
+        } finally {
+          if (btnSavePdf) {
+            btnSavePdf.disabled = false;
+            btnSavePdf.innerHTML = originalBtnHtml;
+            if (window.lucide) window.lucide.createIcons();
+          }
+        }
+      } else {
+        // Fallback หากระบบกำลังโหลด script CDN
+        showToast("กำลังโหลดระบบ PDF กรุณากดใหม่อีกครั้งใน 2-3 วินาทีครับ", "info");
+      }
+    }
+
+    if (btnSavePdf) {
+      btnSavePdf.addEventListener('click', () => {
+        directDownloadPdf();
+      });
+    }
+
     if (btnPrintNow) {
       btnPrintNow.addEventListener('click', () => {
+        if (document.activeElement && typeof document.activeElement.blur === 'function') {
+          document.activeElement.blur();
+        }
+        const previewContent = document.getElementById('pdf-preview-content');
+        const printSection = document.getElementById('print-section');
+        if (previewContent && printSection) {
+          printSection.innerHTML = previewContent.innerHTML;
+        }
         window.print();
       });
     }

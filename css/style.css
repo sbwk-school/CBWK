@@ -60,6 +60,16 @@ body {
   box-shadow: 0 6px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 4px -1px rgba(15, 23, 42, 0.03);
 }
 
+/* Shake Animation for Pin Entry */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+.animate-shake {
+  animation: shake 0.35s ease-in-out;
+}
+
 /* Subtle button press feedback */
 .btn-press:active {
   transform: scale(0.97);
@@ -154,25 +164,44 @@ body {
   margin-bottom: 8px;
   font-family: var(--font-doc);
   font-size: 13.5px;
+  border: 0.5px solid #000000 !important;
 }
-.gov-table,
+.gov-table th,
+.gov-table td,
+.gov-table td div {
+  box-sizing: border-box !important;
+}
+
 .gov-table th,
 .gov-table td {
-  border: 0.5pt solid #000000 !important;
-  padding: 4px 3px;
+  border: 0.5px solid #000000 !important;
+  padding: 0 !important;
   text-align: center;
-  vertical-align: middle;
-  box-sizing: border-box;
+  vertical-align: middle !important;
+  line-height: 1.25;
 }
 .gov-table th {
   font-weight: bold;
   background-color: #ffffff;
+  padding: 4px 2px !important;
 }
 
-/* Vertical Text for Lunch Break */
+.gov-table td.cell-teacher-name {
+  vertical-align: middle !important;
+  padding: 0 !important;
+  height: 100% !important;
+  border: 0.5px solid #000000 !important;
+}
+
+.gov-table th.cell-lunch-break {
+  vertical-align: middle !important;
+  padding: 0 !important;
+  height: 100% !important;
+  border: 0.5px solid #000000 !important;
+}
+
+/* Vertical Text for Lunch Break (Fallback) */
 .vertical-text {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
   letter-spacing: 2px;
   padding: 6px 2px;
   white-space: nowrap;
@@ -237,10 +266,21 @@ body {
     border-spacing: 0 !important;
     table-layout: fixed !important;
     width: 100% !important;
+    border: none !important;
   }
-  .gov-table,
   .gov-table th,
   .gov-table td {
-    border: 0.5pt solid #000000 !important;
+    border: 0.5px solid #444444 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    vertical-align: middle !important;
+  }
+  .gov-table th {
+    padding: 4px 2px !important;
+  }
+
+  .doc-subject-text {
+    background-color: transparent !important;
+    outline: none !important;
   }
 }

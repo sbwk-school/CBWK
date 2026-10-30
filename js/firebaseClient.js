@@ -480,11 +480,19 @@
       Object.values(periodMap).forEach(item => cleanList.push(item));
     });
 
+    // เรียงลำดับรายการตามเวลาจริงจากใหม่ไปเก่าอย่างแม่นยำ
+    cleanList.sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.date || 0).getTime();
+      const timeB = new Date(b.createdAt || b.date || 0).getTime();
+      return timeB - timeA;
+    });
+
     return { cleanList, zombieIds };
   }
 
   async function getSubstitutions() {
     let rawList = [];
+    let fetchedFromCloud = false;
 
     if (firestoreDb) {
       try {
@@ -492,6 +500,8 @@
           .orderBy('createdAt', 'desc')
           .limit(1000)
           .get();
+
+        fetchedFromCloud = true;
 
         if (!snapshot.empty) {
           snapshot.forEach(doc => {
@@ -517,7 +527,7 @@
       }
     }
 
-    if (rawList.length === 0) {
+    if (!fetchedFromCloud) {
       const local = localStorage.getItem(STORAGE_KEYS.SUBSTITUTIONS);
       rawList = local ? JSON.parse(local) : [];
     }
@@ -525,8 +535,12 @@
     // กรองและลบข้อมูลที่ซ้ำซ้อนออก
     const { cleanList, zombieIds } = deduplicateSubstitutions(rawList);
 
-    // ซิงค์บันทึก cleanList ลง LocalStorage
-    localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(cleanList));
+    // ซิงค์บันทึก cleanList ลง LocalStorage อย่างปลอดภัย
+    try {
+      localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(cleanList));
+    } catch (storageErr) {
+      console.warn("LocalStorage save substitutions quota note:", storageErr);
+    }
 
     // หากพบเรคคอร์ดที่ซ้ำซ้อนใน Firestore ให้สั่งลบแบบเงียบๆ ใน Background เพื่อคลีนฐานข้อมูล
     if (firestoreDb && zombieIds.length > 0) {
@@ -599,9 +613,13 @@
 
         newRecordsWithId.forEach(r => {
           const docRef = firestoreDb.collection('substitutions').doc(r.id);
+          const serverTs = (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue)
+            ? firebase.firestore.FieldValue.serverTimestamp()
+            : new Date();
           batch.set(docRef, {
             ...r,
-            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            createdAt: serverTs,
+            updatedAt: serverTs
           });
         });
 

@@ -40,7 +40,7 @@
   } = global.TeachData || {};
 
   const ADMIN_PIN_KEY = 'teach_admin_pin';
-  const DEFAULT_PIN = '0000';
+  const DEFAULT_PIN = '1111';
 
   let isUnlocked = false;
   let activeAdminTab = 'school';
@@ -79,36 +79,80 @@
   }
 
   function getStoredPin() {
-    return localStorage.getItem(ADMIN_PIN_KEY) || DEFAULT_PIN;
+    const saved = localStorage.getItem(ADMIN_PIN_KEY);
+    if (!saved || saved === '0000') {
+      return DEFAULT_PIN;
+    }
+    return saved;
   }
 
   function renderPinLockScreen() {
     const container = document.getElementById('view-admin');
+    if (!container) return;
+
     container.innerHTML = `
-      <div class="max-w-md mx-auto my-12 glass-card hover-lift rounded-3xl shadow-xl border border-slate-200/90 p-8 text-center animate-in fade-in duration-200">
-        <div class="w-16 h-16 bg-gradient-to-tr from-indigo-500 to-blue-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm shadow-indigo-500/25">
-          <i data-lucide="lock" class="w-8 h-8"></i>
-        </div>
-        <h2 class="text-xl font-bold text-slate-800">เข้าสู่ระบบผู้ดูแลระบบ (Admin)</h2>
-        <p class="text-xs text-slate-500 mt-1 mb-6">กรุณากรอกรหัสผ่าน 4 หลัก เพื่อจัดการตารางสอนและการตั้งค่า</p>
+      <div class="relative max-w-md mx-auto my-8 sm:my-14 px-4">
+        <!-- Ambient Backdrop Glow -->
+        <div class="absolute -top-10 -left-10 w-52 h-52 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -bottom-10 -right-10 w-52 h-52 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div class="flex justify-center gap-3 mb-6">
-          <input type="password" id="pin-input" maxlength="4" placeholder="••••" autofocus
-            class="w-48 text-center tracking-[1em] text-2xl font-black py-3 bg-white border-2 border-slate-300 rounded-2xl outline-none focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 transition-all shadow-2xs">
-        </div>
+        <!-- Main Card -->
+        <div id="admin-login-card" class="relative bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl shadow-slate-900/10 border border-slate-200/80 p-8 sm:p-10 text-center transition-all duration-300">
+          
+          <!-- Security Icon Badge -->
+          <div class="relative inline-flex items-center justify-center mb-5">
+            <div class="w-20 h-20 bg-gradient-to-tr from-indigo-600 via-indigo-700 to-blue-600 text-white rounded-3xl flex items-center justify-center shadow-xl shadow-indigo-500/25 ring-8 ring-indigo-50/90 transform hover:scale-105 transition-transform duration-300">
+              <i data-lucide="shield-check" class="w-10 h-10 text-white"></i>
+            </div>
+            <div class="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-500 text-white rounded-full flex items-center justify-center ring-2 ring-white shadow-xs">
+              <i data-lucide="check" class="w-3.5 h-3.5 stroke-[3]"></i>
+            </div>
+          </div>
 
-        <div id="pin-error-msg" class="text-xs text-rose-500 font-semibold mb-4 hidden">
-          รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง
-        </div>
+          <!-- Title & Subtitle -->
+          <h2 class="text-2xl font-black text-slate-800 tracking-tight">เข้าสู่ระบบผู้ดูแลระบบ</h2>
+          <p class="text-xs sm:text-sm text-slate-500 mt-1.5 mb-8 font-medium">กรุณากรอกรหัสผ่าน 4 หลัก เพื่อเข้าจัดการข้อมูลและตารางสอน</p>
 
-        <button id="btn-unlock-admin" 
-          class="btn-press hover-lift-sm w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-2xl shadow-sm shadow-indigo-500/25 transition-all text-sm flex items-center justify-center gap-2 cursor-pointer">
-          <i data-lucide="key" class="w-4 h-4"></i>
-          ปลดล็อคเข้าสู่ระบบ
-        </button>
+          <!-- 4-Digit Segmented PIN Visualizer -->
+          <div class="relative flex justify-center items-center gap-3 sm:gap-3.5 mb-6 cursor-pointer select-none" id="pin-box-wrapper" title="คลิกเพื่อกรอกรหัสผ่าน">
+            <!-- Hidden Real Input -->
+            <input type="password" id="pin-input" maxlength="4" autofocus inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+              class="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-20 text-transparent selection:bg-transparent">
 
-        <div class="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400">
-          รหัสผ่านเริ่มต้นของระบบคือ <strong class="text-slate-600 font-mono">0000</strong>
+            <!-- 4 Visual Digit Slots -->
+            <div class="pin-slot w-13 h-16 sm:w-14 sm:h-18 rounded-2xl border-2 border-indigo-600 bg-white flex items-center justify-center transition-all duration-200 shadow-md ring-4 ring-indigo-100" data-index="0">
+              <span class="slot-dot w-2 h-2 rounded-full bg-indigo-400 animate-pulse transition-all duration-150"></span>
+            </div>
+            <div class="pin-slot w-13 h-16 sm:w-14 sm:h-18 rounded-2xl border-2 border-slate-200/90 bg-slate-50/70 flex items-center justify-center transition-all duration-200 shadow-2xs" data-index="1">
+              <span class="slot-dot w-2.5 h-2.5 rounded-full bg-slate-300 transition-all duration-150"></span>
+            </div>
+            <div class="pin-slot w-13 h-16 sm:w-14 sm:h-18 rounded-2xl border-2 border-slate-200/90 bg-slate-50/70 flex items-center justify-center transition-all duration-200 shadow-2xs" data-index="2">
+              <span class="slot-dot w-2.5 h-2.5 rounded-full bg-slate-300 transition-all duration-150"></span>
+            </div>
+            <div class="pin-slot w-13 h-16 sm:w-14 sm:h-18 rounded-2xl border-2 border-slate-200/90 bg-slate-50/70 flex items-center justify-center transition-all duration-200 shadow-2xs" data-index="3">
+              <span class="slot-dot w-2.5 h-2.5 rounded-full bg-slate-300 transition-all duration-150"></span>
+            </div>
+          </div>
+
+          <!-- Error Alert Banner -->
+          <div id="pin-error-msg" class="text-xs text-rose-600 bg-rose-50 border border-rose-200/90 py-2.5 px-4 rounded-xl font-bold mb-5 hidden animate-in fade-in flex items-center justify-center gap-2 shadow-2xs">
+            <i data-lucide="alert-circle" class="w-4 h-4 text-rose-500 shrink-0"></i>
+            <span>รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง</span>
+          </div>
+
+          <!-- Unlock Button -->
+          <button id="btn-unlock-admin" 
+            class="btn-press hover-lift-sm w-full py-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/25 transition-all text-sm flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="lock-open" class="w-4 h-4"></i>
+            <span>ปลดล็อคเข้าสู่ระบบ</span>
+          </button>
+
+          <!-- Security Footer Note (ไม่มีคำใบ้รหัสผ่าน) -->
+          <div class="mt-7 pt-5 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] text-slate-400 font-medium">
+            <i data-lucide="shield" class="w-3.5 h-3.5 text-slate-400"></i>
+            <span>ระบบความปลอดภัยข้อมูลโรงเรียนชุมชนบ้านวังพิกุล</span>
+          </div>
+
         </div>
       </div>
     `;
@@ -116,8 +160,33 @@
     const pinInput = document.getElementById('pin-input');
     const errorMsg = document.getElementById('pin-error-msg');
     const unlockBtn = document.getElementById('btn-unlock-admin');
+    const cardEl = document.getElementById('admin-login-card');
+    const wrapperEl = document.getElementById('pin-box-wrapper');
+
+    function updatePinSlotsUI() {
+      if (!pinInput) return;
+      const val = pinInput.value;
+      const slots = container.querySelectorAll('.pin-slot');
+      slots.forEach((slot, idx) => {
+        const dot = slot.querySelector('.slot-dot');
+        if (idx < val.length) {
+          // Filled slot
+          slot.className = "pin-slot w-13 h-16 sm:w-14 sm:h-18 rounded-2xl border-2 border-indigo-500 bg-indigo-50/40 flex items-center justify-center transition-all duration-150 shadow-xs ring-2 ring-indigo-200/60";
+          if (dot) dot.className = "slot-dot w-3.5 h-3.5 rounded-full bg-indigo-600 shadow-xs shadow-indigo-500/40 scale-125 transition-all duration-150";
+        } else if (idx === val.length) {
+          // Current active typing slot
+          slot.className = "pin-slot w-13 h-16 sm:w-14 sm:h-18 rounded-2xl border-2 border-indigo-600 bg-white flex items-center justify-center transition-all duration-150 shadow-md ring-4 ring-indigo-100";
+          if (dot) dot.className = "slot-dot w-2 h-2 rounded-full bg-indigo-400 animate-pulse transition-all duration-150";
+        } else {
+          // Empty slot
+          slot.className = "pin-slot w-13 h-16 sm:w-14 sm:h-18 rounded-2xl border-2 border-slate-200/90 bg-slate-50/70 flex items-center justify-center transition-all duration-150 shadow-2xs";
+          if (dot) dot.className = "slot-dot w-2.5 h-2.5 rounded-full bg-slate-300 transition-all duration-150";
+        }
+      });
+    }
 
     const checkPin = async () => {
+      if (!pinInput) return;
       const entered = pinInput.value.trim();
       if (entered === getStoredPin()) {
         isUnlocked = true;
@@ -125,16 +194,46 @@
         await loadAdminData();
         renderAdminDashboard();
       } else {
-        errorMsg.classList.remove('hidden');
+        if (errorMsg) errorMsg.classList.remove('hidden');
+        if (cardEl) {
+          cardEl.classList.remove('animate-shake');
+          void cardEl.offsetWidth; // Trigger reflow for animation restart
+          cardEl.classList.add('animate-shake');
+        }
         pinInput.value = '';
+        updatePinSlotsUI();
         pinInput.focus();
       }
     };
 
-    unlockBtn.addEventListener('click', checkPin);
-    pinInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') checkPin();
-    });
+    if (pinInput) {
+      pinInput.addEventListener('input', () => {
+        if (errorMsg) errorMsg.classList.add('hidden');
+        updatePinSlotsUI();
+        if (pinInput.value.length === 4) {
+          setTimeout(checkPin, 90);
+        }
+      });
+
+      pinInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') checkPin();
+      });
+
+      // Auto focus smoothly
+      setTimeout(() => {
+        if (pinInput) pinInput.focus();
+      }, 100);
+    }
+
+    if (wrapperEl) {
+      wrapperEl.addEventListener('click', () => {
+        if (pinInput) pinInput.focus();
+      });
+    }
+
+    if (unlockBtn) {
+      unlockBtn.addEventListener('click', checkPin);
+    }
 
     if (window.lucide) window.lucide.createIcons();
   }
@@ -1558,6 +1657,7 @@
           });
           await saveTeachers(activeTeachers);
           if (saveTeacherGrades) await saveTeacherGrades(activeTeacherGrades);
+          if (saveAllTimetables) await saveAllTimetables(activeTimetables, activeTeachers);
           renderPeriodsTab(container);
           if (global.TeachApp && global.TeachApp.showToast) {
             global.TeachApp.showToast(`เพิ่มคุณครู "${trimmed}" เรียบร้อยแล้ว`, "success");
@@ -1578,6 +1678,7 @@
           activeTeachers[idx] = newName;
           await saveTeachers(activeTeachers);
           if (saveTeacherGrades) await saveTeacherGrades(activeTeacherGrades);
+          if (saveAllTimetables) await saveAllTimetables(activeTimetables, activeTeachers);
           renderPeriodsTab(container);
           if (global.TeachApp && global.TeachApp.showToast) {
             global.TeachApp.showToast(`เปลี่ยนชื่อเป็น "${newName}" เรียบร้อยแล้ว`, "success");
@@ -1600,6 +1701,7 @@
           });
           await saveTeachers(activeTeachers);
           if (saveTeacherGrades) await saveTeacherGrades(activeTeacherGrades);
+          if (saveAllTimetables) await saveAllTimetables(activeTimetables, activeTeachers);
           renderPeriodsTab(container);
           if (global.TeachApp && global.TeachApp.showToast) {
             global.TeachApp.showToast(`ลบคุณครู "${name}" เรียบร้อยแล้ว`, "info");
