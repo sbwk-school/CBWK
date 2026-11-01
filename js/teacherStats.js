@@ -3,8 +3,8 @@
  */
 
 (function(global) {
-  const db = global.TeachDatabase || global.TeachSupabase;
-  const { getTeachers, getSubstitutions, deleteSubstitution, deleteSubstitutionsBatch } = db;
+  const db = global.TeachDatabase;
+  const { getTeachers, getSubstitutions, recordSubstitutions, deleteSubstitution, deleteSubstitutionsBatch } = db;
   const { formatThaiDate } = global.TeachData;
 
   let cachedTeachers = [];
@@ -12,7 +12,6 @@
   let searchQuery = "";
   let sortBy = "subCountDesc";
   let currentModalTab = "sub"; // 'sub' | 'leave'
-  let currentModalTeacher = null;
 
   async function initTeacherStatsPage() {
     const container = document.getElementById('view-teacher-stats');
@@ -231,6 +230,14 @@
 
         <!-- Table Card (Glass Card) -->
         <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 overflow-hidden">
+          <div class="flex justify-end px-4 pt-3 no-print">
+            <button id="btn-print-teacher-report" type="button"
+              class="btn-press inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              title="พิมพ์รายงานสถิติการลาและการสอนแทน">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+              <span>พิมพ์รายงาน</span>
+            </button>
+          </div>
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
@@ -346,8 +353,19 @@
 
     const searchInput = document.getElementById('teacher-search-input');
     searchInput.addEventListener('input', (e) => {
+      const cursorStart = e.target.selectionStart;
+      const cursorEnd = e.target.selectionEnd;
       searchQuery = e.target.value;
       renderTeacherStatsUI();
+
+      // Rendering replaces the input element, so restore focus and caret for continuous typing.
+      const refreshedSearchInput = document.getElementById('teacher-search-input');
+      if (refreshedSearchInput) {
+        refreshedSearchInput.focus();
+        if (typeof cursorStart === 'number' && typeof cursorEnd === 'number') {
+          refreshedSearchInput.setSelectionRange(cursorStart, cursorEnd);
+        }
+      }
     });
 
     const sortSelect = document.getElementById('teacher-sort-select');
@@ -356,11 +374,72 @@
       renderTeacherStatsUI();
     });
 
+    const printReportButton = document.getElementById('btn-print-teacher-report');
+    if (printReportButton) {
+      printReportButton.addEventListener('click', () => {
+        const printSection = document.getElementById('print-section');
+        if (!printSection) return;
+
+        const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        })[char]);
+        const sortedLabel = sortSelect.options[sortSelect.selectedIndex]?.textContent.trim() || '';
+        const searchLabel = searchQuery.trim()
+          ? `<div>คำค้นหา: ${escapeHtml(searchQuery.trim())}</div>`
+          : '';
+        const printedAt = new Intl.DateTimeFormat('th-TH', {
+          dateStyle: 'long',
+          timeStyle: 'short'
+        }).format(new Date());
+        const reportRows = list.map((teacher, index) => `
+          <tr>
+            <td class="report-center">${index + 1}</td>
+            <td>${escapeHtml(teacher.name)}</td>
+            <td class="report-center">${teacher.leaveCounts.officialDuty}</td>
+            <td class="report-center">${teacher.leaveCounts.personal}</td>
+            <td class="report-center">${teacher.leaveCounts.sick}</td>
+            <td class="report-center">${teacher.leaveCounts.total}</td>
+            <td class="report-center">${teacher.subCount}</td>
+          </tr>
+        `).join('');
+
+        printSection.innerHTML = `
+          <article class="teacher-stats-print-report">
+            <header class="teacher-stats-report-header">
+              <h1>รายงานสถิติการลาและการสอนแทน</h1>
+              <div>ข้อมูลคุณครู ${list.length} ท่าน • เรียงตาม${escapeHtml(sortedLabel)}</div>
+              ${searchLabel}
+              <div>พิมพ์เมื่อ ${escapeHtml(printedAt)}</div>
+            </header>
+            <table class="teacher-stats-print-table">
+              <thead>
+                <tr>
+                  <th>ลำดับ</th>
+                  <th>ชื่อคุณครู</th>
+                  <th>ไปราชการ</th>
+                  <th>ลากิจ</th>
+                  <th>ลาป่วย</th>
+                  <th>รวมลา</th>
+                  <th>สอนแทน</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportRows || '<tr><td colspan="7" class="report-center">ไม่พบข้อมูลคุณครู</td></tr>'}
+              </tbody>
+            </table>
+          </article>`;
+        window.print();
+      });
+    }
+
     container.querySelectorAll('.btn-view-history').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const teacherName = e.currentTarget.dataset.teacher;
         const stats = teacherStatsMap[teacherName] || createEmptyTeacherStat(teacherName);
-        currentModalTeacher = teacherName;
         // หากไม่มีการสอนแทนแต่มีประวัติการลา ให้เปิดแท็บการลาเป็นค่าเริ่มต้น
         if (stats.subCount === 0 && stats.leaveCounts.total > 0) {
           currentModalTab = "leave";
@@ -444,11 +523,45 @@
           content.querySelectorAll('.btn-delete-sub-record').forEach(btn => {
             btn.addEventListener('click', async (e) => {
               const id = e.currentTarget.dataset.id;
-              if (confirm("ต้องการลบประวัติการสอนแทนรายการนี้ใช่หรือไม่?")) {
-                cachedSubstitutions = await deleteSubstitution(id);
+              const targetRecord = cachedSubstitutions.find(record => record.id === id);
+              if (!targetRecord) return;
+
+              const sameLeaveRecords = cachedSubstitutions.filter(record =>
+                record.date === targetRecord.date && record.absentTeacher === targetRecord.absentTeacher
+              );
+              const preserveLeaveHistory = sameLeaveRecords.length === 1;
+              if (preserveLeaveHistory && typeof recordSubstitutions !== 'function') {
+                alert('ไม่สามารถลบรายการสอนแทนโดยเก็บประวัติการลาไว้ได้ กรุณาลองใหม่ภายหลัง');
+                return;
+              }
+
+              const confirmation = preserveLeaveHistory
+                ? 'ลบประวัติการสอนแทนรายการนี้ โดยเก็บสถิติการลาของครูไว้ใช่หรือไม่?'
+                : 'ต้องการลบประวัติการสอนแทนรายการนี้ใช่หรือไม่?';
+              if (!confirm(confirmation)) return;
+
+              try {
+                if (preserveLeaveHistory) {
+                  cachedSubstitutions = await recordSubstitutions([{
+                    date: targetRecord.date,
+                    dayOfWeek: targetRecord.dayOfWeek || '',
+                    absentTeacher: targetRecord.absentTeacher,
+                    leaveType: targetRecord.leaveType || 'ไปราชการ',
+                    periodId: 0,
+                    periodTime: '-',
+                    subject: 'ไม่ได้ระบุผู้สอนแทน',
+                    room: '-',
+                    substituteTeacher: ''
+                  }]);
+                } else {
+                  cachedSubstitutions = await deleteSubstitution(id);
+                }
                 renderTeacherStatsUI();
                 const updatedStatsMap = calculateTeacherStats();
                 openTeacherHistoryModal(teacherName, updatedStatsMap[teacherName] || createEmptyTeacherStat(teacherName));
+              } catch (error) {
+                console.error('Delete substitute history error:', error);
+                alert('ลบประวัติการสอนแทนไม่สำเร็จ กรุณาลองใหม่');
               }
             });
           });

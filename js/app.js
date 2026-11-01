@@ -166,20 +166,12 @@
   };
 
   document.addEventListener('DOMContentLoaded', () => {
-    // 1. ผูก Event Listener บนปุ่มแท็บทันทีแบบ Synchronous (ไม่ต้องรอโหลด Network)
-    document.querySelectorAll('.nav-tab-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const btnEl = e.currentTarget;
-        const targetTab = btnEl ? btnEl.dataset.tab : null;
-        if (targetTab) switchTab(targetTab);
-      });
-    });
-
+    // ผูก listener ที่แถบเมนูเพียงจุดเดียว เพื่อไม่ให้คลิกแล้วสลับหน้าซ้ำ
     const appTabs = document.getElementById('app-tabs');
     if (appTabs) {
       appTabs.addEventListener('click', (e) => {
         const btn = e.target.closest('.nav-tab-btn');
-        if (btn && btn.dataset.tab) {
+        if (btn && appTabs.contains(btn) && btn.dataset.tab) {
           switchTab(btn.dataset.tab);
         }
       });
@@ -197,109 +189,24 @@
       });
     }
 
-    async function directDownloadPdf() {
-      const modal = document.getElementById('pdf-preview-modal');
-      const pages = modal ? modal.querySelectorAll('#pdf-preview-content .a4-page-preview') : [];
-      if (!pages || pages.length === 0) {
-        showToast("ไม่พบหน้าเอกสารที่ต้องการบันทึก", "error");
-        return;
+    function openPrintDialog() {
+      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
       }
-
-      const dateInput = document.getElementById('sub-date-input') || document.getElementById('input-substitute-date');
-      let datePart = 'ประจำวัน';
-      if (dateInput && dateInput.value) {
-        const parts = dateInput.value.split('-');
-        if (parts.length === 3) {
-          datePart = `${parts[2]}-${parts[1]}-${parseInt(parts[0]) + 543}`;
-        }
+      const previewContent = document.getElementById('pdf-preview-content');
+      const printSection = document.getElementById('print-section');
+      if (previewContent && printSection) {
+        printSection.innerHTML = previewContent.innerHTML;
       }
-      const filename = `แบบบันทึกการสอนแทน_${datePart}.pdf`;
-
-      if (window.jspdf && window.html2canvas) {
-        const originalBtnHtml = btnSavePdf ? btnSavePdf.innerHTML : '';
-        if (btnSavePdf) {
-          btnSavePdf.disabled = true;
-          btnSavePdf.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>กำลังดาวน์โหลด PDF...</span>`;
-          if (window.lucide) window.lucide.createIcons();
-        }
-
-        try {
-          if (document.activeElement && typeof document.activeElement.blur === 'function') {
-            document.activeElement.blur();
-          }
-
-          if (document.fonts && document.fonts.ready) {
-            await document.fonts.ready;
-          }
-
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4',
-            compress: true
-          });
-
-          for (let i = 0; i < pages.length; i++) {
-            const pageEl = pages[i];
-            
-            // Render directly from visible preview DOM without box shadow
-            const prevShadow = pageEl.style.boxShadow;
-            pageEl.style.boxShadow = 'none';
-
-            const canvas = await window.html2canvas(pageEl, {
-              scale: 2, // 2x high-DPI crisp rendering
-              useCORS: true,
-              logging: false,
-              backgroundColor: '#ffffff'
-            });
-
-            pageEl.style.boxShadow = prevShadow;
-
-            const imgData = canvas.toDataURL('image/png');
-            if (i > 0) {
-              pdf.addPage('a4', 'portrait');
-            }
-            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
-          }
-
-          // Force direct download to user's computer
-          pdf.save(filename);
-          showToast(`บันทึกและดาวน์โหลดไฟล์ "${filename}" สำเร็จเรียบร้อยครับ`, 'success');
-        } catch (err) {
-          console.error("Direct PDF export error:", err);
-          showToast("เกิดข้อผิดพลาดในการสร้าง PDF กรุณาใช้ปุ่มพิมพ์แทนครับ", "error");
-        } finally {
-          if (btnSavePdf) {
-            btnSavePdf.disabled = false;
-            btnSavePdf.innerHTML = originalBtnHtml;
-            if (window.lucide) window.lucide.createIcons();
-          }
-        }
-      } else {
-        // Fallback หากระบบกำลังโหลด script CDN
-        showToast("กำลังโหลดระบบ PDF กรุณากดใหม่อีกครั้งใน 2-3 วินาทีครับ", "info");
-      }
+      window.print();
     }
 
     if (btnSavePdf) {
-      btnSavePdf.addEventListener('click', () => {
-        directDownloadPdf();
-      });
+      btnSavePdf.addEventListener('click', openPrintDialog);
     }
 
     if (btnPrintNow) {
-      btnPrintNow.addEventListener('click', () => {
-        if (document.activeElement && typeof document.activeElement.blur === 'function') {
-          document.activeElement.blur();
-        }
-        const previewContent = document.getElementById('pdf-preview-content');
-        const printSection = document.getElementById('print-section');
-        if (previewContent && printSection) {
-          printSection.innerHTML = previewContent.innerHTML;
-        }
-        window.print();
-      });
+      btnPrintNow.addEventListener('click', openPrintDialog);
     }
 
     // 2. เริ่มต้นฐานข้อมูล Firebase ทันทีแบบ Synchronous เพื่อให้ firestoreDb พร้อมใช้งานก่อนโหลดข้อมูลหน้าแรก

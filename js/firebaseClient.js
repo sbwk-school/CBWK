@@ -703,6 +703,27 @@
     return updated;
   }
 
+  async function clearSubstitutionHistory() {
+    if (!firestoreDb) {
+      throw new Error('ยังไม่ได้เชื่อมต่อ Firebase จึงล้างประวัติส่วนกลางไม่ได้');
+    }
+
+    const collection = firestoreDb.collection('substitutions');
+    let deletedCount = 0;
+    while (true) {
+      const snapshot = await collection.limit(450).get();
+      if (snapshot.empty) break;
+
+      const batch = firestoreDb.batch();
+      snapshot.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+      deletedCount += snapshot.size;
+    }
+
+    localStorage.removeItem(STORAGE_KEYS.SUBSTITUTIONS);
+    return deletedCount;
+  }
+
   // -------------------------------------------------------------
   // Seed All Data to Firebase
   // -------------------------------------------------------------
@@ -785,6 +806,7 @@
     deleteSubstitution,
     deleteSubstitutionsBatch,
     deleteSubstitutionsForTeacher,
+    clearSubstitutionHistory,
     seedAllDataToFirebase
   };
 

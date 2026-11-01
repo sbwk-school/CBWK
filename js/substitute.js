@@ -39,6 +39,7 @@
   } = db;
 
   let currentDate = new Date();
+  let datePickerDismissHandler = null;
   
   function toLocalISODate(d) {
     if (!d || !(d instanceof Date) || isNaN(d.getTime())) {
@@ -48,6 +49,14 @@
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  function formatDatePickerLabel(date) {
+    return new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }).format(date);
   }
 
   let absentTeachersList = []; 
@@ -163,7 +172,10 @@
           }
 
           if (needsRerender) {
-            loadSavedSubstitutionsForCurrentDate();
+            const hasUnsavedItems = absentTeachersList.some(item => item && !item.isSaved);
+            if (!hasUnsavedItems) {
+              loadSavedSubstitutionsForCurrentDate();
+            }
             renderSubstituteUI();
           }
         } catch (cloudErr) {
@@ -367,11 +379,14 @@
               </div>
               
               <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
-                <div class="flex items-center gap-2 bg-white/90 border border-slate-200/90 rounded-xl px-3 py-1.5 shadow-2xs hover:border-indigo-300 transition-colors">
-                  <span class="text-xs font-semibold text-slate-500">เลือกวันที่:</span>
-                  <input type="date" id="sub-date-input" 
-                    value="${toLocalISODate(currentDate)}" 
-                    class="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer">
+                <div id="sub-date-picker" class="sub-date-picker relative z-30">
+                  <input type="hidden" id="sub-date-input" value="${toLocalISODate(currentDate)}">
+                  <button type="button" id="sub-date-trigger" class="sub-date-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="sub-date-calendar">
+                    <span class="sub-date-label">เลือกวันที่:</span>
+                    <span id="sub-date-display" class="sub-date-value">${formatDatePickerLabel(currentDate)}</span>
+                    <i data-lucide="calendar-days" class="w-4 h-4 text-slate-500 shrink-0"></i>
+                  </button>
+                  <div id="sub-date-calendar" class="sub-date-calendar" role="dialog" aria-label="เลือกวันที่" hidden></div>
                 </div>
 
                 <button type="button" id="btn-view-day-timetable" 
@@ -431,6 +446,135 @@
           loadSavedSubstitutionsForCurrentDate();
           renderSubstituteUI();
         });
+      }
+
+      const datePicker = document.getElementById('sub-date-picker');
+      const dateTrigger = document.getElementById('sub-date-trigger');
+      const dateCalendar = document.getElementById('sub-date-calendar');
+      if (datePicker && dateTrigger && dateCalendar && dateInput) {
+        let calendarDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1, 12);
+        let showMonthYearPicker = false;
+
+        const renderCalendar = () => {
+          const year = calendarDate.getFullYear();
+          const month = calendarDate.getMonth();
+          const monthLabel = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { month: 'long' }).format(calendarDate);
+          const todayIso = toLocalISODate(new Date());
+          const selectedIso = dateInput.value;
+          const firstDate = new Date(year, month, 1, 12);
+          const gridStart = new Date(year, month, 1 - firstDate.getDay(), 12);
+          const weekdays = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+          const yearOptions = [];
+          for (let optionYear = year - 8; optionYear <= year + 8; optionYear++) {
+            yearOptions.push(`<option value="${optionYear}" ${optionYear === year ? 'selected' : ''}>${optionYear}</option>`);
+          }
+
+          const monthYearControl = showMonthYearPicker
+            ? `<div class="sub-date-month-year-controls">
+                <select data-calendar-month aria-label="เลือกเดือน">
+                  ${Array.from({ length: 12 }, (_, monthIndex) => {
+                    const label = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { month: 'long' }).format(new Date(year, monthIndex, 1));
+                    return `<option value="${monthIndex}" ${monthIndex === month ? 'selected' : ''}>${label}</option>`;
+                  }).join('')}
+                </select>
+                <select data-calendar-year aria-label="เลือกปี">${yearOptions.join('')}</select>
+              </div>`
+            : `<button type="button" class="sub-date-month-title" data-calendar-action="toggle-month-year" aria-label="เลือกเดือนและปี">${monthLabel} ${year}<span aria-hidden="true">▾</span></button>`;
+
+          const dayButtons = Array.from({ length: 42 }, (_, index) => {
+            const cellDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index, 12);
+            const isoDate = toLocalISODate(cellDate);
+            const inMonth = cellDate.getMonth() === month;
+            const dayClasses = [
+              'sub-date-day',
+              inMonth ? '' : 'is-outside-month',
+              isoDate === todayIso ? 'is-today' : '',
+              isoDate === selectedIso ? 'is-selected' : ''
+            ].filter(Boolean).join(' ');
+            const cellMonthLabel = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { month: 'long' }).format(cellDate);
+            return `<button type="button" class="${dayClasses}" data-calendar-date="${isoDate}" aria-label="${cellDate.getDate()} ${cellMonthLabel} ${cellDate.getFullYear()}" ${isoDate === selectedIso ? 'aria-pressed="true"' : ''}>${cellDate.getDate()}</button>`;
+          }).join('');
+
+          dateCalendar.innerHTML = `
+            <div class="sub-date-calendar-header">
+              <div class="sub-date-calendar-heading">${monthYearControl}</div>
+              <div class="sub-date-calendar-nav">
+                <button type="button" data-calendar-action="previous-month" aria-label="เดือนก่อนหน้า">‹</button>
+                <button type="button" data-calendar-action="next-month" aria-label="เดือนถัดไป">›</button>
+              </div>
+            </div>
+            <div class="sub-date-calendar-weekdays">${weekdays.map(day => `<span>${day}</span>`).join('')}</div>
+            <div class="sub-date-calendar-grid">${dayButtons}</div>
+            <div class="sub-date-calendar-footer">
+              <span class="sub-date-today-hint">วันนี้ ${formatDatePickerLabel(new Date())}</span>
+              <button type="button" data-calendar-action="today">วันนี้</button>
+            </div>`;
+        };
+
+        const selectCalendarDate = (isoDate) => {
+          dateCalendar.hidden = true;
+          dateTrigger.setAttribute('aria-expanded', 'false');
+          dateInput.value = isoDate;
+          dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        dateTrigger.addEventListener('click', () => {
+          const opening = dateCalendar.hidden;
+          dateCalendar.hidden = !opening;
+          dateTrigger.setAttribute('aria-expanded', String(opening));
+          if (opening) renderCalendar();
+        });
+
+        dateCalendar.addEventListener('click', (event) => {
+          const dateButton = event.target.closest('[data-calendar-date]');
+          if (dateButton) {
+            selectCalendarDate(dateButton.dataset.calendarDate);
+            return;
+          }
+          const actionButton = event.target.closest('[data-calendar-action]');
+          if (!actionButton) return;
+          switch (actionButton.dataset.calendarAction) {
+            case 'previous-month':
+              calendarDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1, 12);
+              break;
+            case 'next-month':
+              calendarDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1, 12);
+              break;
+            case 'toggle-month-year':
+              showMonthYearPicker = !showMonthYearPicker;
+              break;
+            case 'today':
+              selectCalendarDate(toLocalISODate(new Date()));
+              return;
+          }
+          renderCalendar();
+        });
+
+        dateCalendar.addEventListener('change', (event) => {
+          if (event.target.matches('[data-calendar-month]')) {
+            calendarDate = new Date(calendarDate.getFullYear(), Number(event.target.value), 1, 12);
+            renderCalendar();
+          } else if (event.target.matches('[data-calendar-year]')) {
+            calendarDate = new Date(Number(event.target.value), calendarDate.getMonth(), 1, 12);
+            renderCalendar();
+          }
+        });
+
+        if (datePickerDismissHandler) {
+          document.removeEventListener('pointerdown', datePickerDismissHandler);
+          document.removeEventListener('keydown', datePickerDismissHandler);
+        }
+        datePickerDismissHandler = (event) => {
+          if (event.type === 'keydown' && event.key === 'Escape' && !dateCalendar.hidden) {
+            dateCalendar.hidden = true;
+            dateTrigger.setAttribute('aria-expanded', 'false');
+          } else if (event.type === 'pointerdown' && !datePicker.contains(event.target)) {
+            dateCalendar.hidden = true;
+            dateTrigger.setAttribute('aria-expanded', 'false');
+          }
+        };
+        document.addEventListener('pointerdown', datePickerDismissHandler);
+        document.addEventListener('keydown', datePickerDismissHandler);
       }
 
       const btnViewTimetable = document.getElementById('btn-view-day-timetable');
@@ -505,7 +649,7 @@
     });
   }
 
-  function populateTeacherPeriods(item) {
+  function populateTeacherPeriods(item, resetExistingAssignments = false) {
     if (!item) return;
     const dateInfo = formatThaiDate(currentDate);
     const dayName = dateInfo.dayOfWeek;
@@ -514,7 +658,8 @@
     const teacherIndex = teacherList.indexOf(item.teacherName);
     const periodsList = Array.isArray(cachedPeriods) ? cachedPeriods : [];
 
-    item.periods = item.periods || {};
+    const previousPeriods = resetExistingAssignments ? {} : (item.periods || {});
+    const refreshedPeriods = {};
     if (teacherIndex >= 0 && dayTimetable[teacherIndex]) {
       const teacherSchedule = dayTimetable[teacherIndex] || [];
       periodsList.forEach((period, pIdx) => {
@@ -522,18 +667,19 @@
           const rawClass = teacherSchedule[pIdx] || "";
           if (rawClass && String(rawClass).trim()) {
             const parsed = parseSubjectAndRoom ? parseSubjectAndRoom(rawClass) : { subject: rawClass, room: "" };
-            item.periods[period.id] = {
+            refreshedPeriods[period.id] = {
               periodId: period.id,
               periodName: period.name || `คาบ ${period.id}`,
               periodTime: period.time || "",
               subject: parsed.subject || "",
               room: parsed.room || "",
-              substituteTeacher: (item.periods[period.id] && item.periods[period.id].substituteTeacher) || ""
+              substituteTeacher: (previousPeriods[period.id] && previousPeriods[period.id].substituteTeacher) || ""
             };
           }
         }
       });
     }
+    item.periods = refreshedPeriods;
   }
 
   function renderAbsentTeachersCards() {
@@ -741,7 +887,7 @@
       select.addEventListener('change', (e) => {
         const idx = parseInt(e.target.dataset.index);
         absentTeachersList[idx].teacherName = e.target.value;
-        populateTeacherPeriods(absentTeachersList[idx]);
+        populateTeacherPeriods(absentTeachersList[idx], true);
         syncSavedStateForTeacher(absentTeachersList[idx]);
         renderAbsentTeachersCards();
       });
@@ -1052,6 +1198,9 @@
   function generateOfficialDocumentPagesHtml(customItems) {
     const dateInfo = formatThaiDate(currentDate);
     const settings = cachedSettings;
+    const periodTimes = new Map((Array.isArray(cachedPeriods) ? cachedPeriods : [])
+      .map(period => [Number(period.id), period.time || '']));
+    const getDocumentPeriodTime = periodId => periodTimes.get(periodId) || '';
 
     let items;
     if (customItems !== undefined) {
@@ -1101,7 +1250,7 @@
       }
 
       return `
-        <div class="a4-page-preview flex flex-col justify-between" id="doc-page-${pageIdx + 1}">
+        <div class="a4-page-preview flex flex-col ${pageTeachers.length === 1 ? 'single-teacher-page' : 'justify-between'}" id="doc-page-${pageIdx + 1}">
           
           <div>
             ${settings.logoUrl ? `
@@ -1168,17 +1317,17 @@
                       <tr style="height: 32px;">
                         <th style="width: 15%; padding: 4px 2px !important; vertical-align: middle !important;">ชื่อครู<br>ประจำวิชา</th>
                         <th style="width: 13%; padding: 4px 2px !important; vertical-align: middle !important;">รายละเอียด</th>
-                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">08.30 - 09.30</th>
-                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">09.30 - 10.30</th>
-                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">10.30 - 11.30</th>
+                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(1)}</th>
+                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(2)}</th>
+                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(3)}</th>
                         <th class="cell-lunch-break" style="width: 4%;" rowspan="5">
                           <div style="display: flex; align-items: center; justify-content: center; height: 100%; min-height: 154px;">
                             <img src="${getLunchBreakPng()}" style="width: 25px; height: 150px; display: block; margin: 0 auto; pointer-events: none;" draggable="false">
                           </div>
                         </th>
-                        <th style="width: 11.16%; padding: 4px 2px !important; vertical-align: middle !important;">12.30 - 13.30</th>
-                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">13.30 - 14.30</th>
-                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">14.30 - 15.30</th>
+                        <th style="width: 11.16%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(5)}</th>
+                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(6)}</th>
+                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(7)}</th>
                       </tr>
                       <tr style="height: 38px;">
                         <td rowspan="4" class="cell-teacher-name bg-white">

@@ -19,7 +19,8 @@
     parseConfigInput, 
     saveFirebaseConfig, 
     testFirebaseConnection, 
-    seedAllDataToFirebase 
+    seedAllDataToFirebase,
+    clearSubstitutionHistory
   } = global.TeachDatabase;
 
   const {
@@ -54,6 +55,29 @@
   let teacherSearchQuery = '';
   let sheetFilterGrade = 'ALL';
   let sessionRawLogoUrl = null;
+
+  async function saveTeacherRosterAndTimetables() {
+    await saveTeachers(activeTeachers);
+    if (saveTeacherGrades) await saveTeacherGrades(activeTeacherGrades);
+    if (saveAllTimetables) {
+      await saveAllTimetables(activeTimetables, activeTeachers);
+      return;
+    }
+
+    const days = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"];
+    for (const day of days) {
+      await saveDayTimetable(day, activeTimetables[day] || [], activeTeachers);
+    }
+  }
+
+  function showRosterSaveResult(error) {
+    if (global.TeachApp && global.TeachApp.showToast) {
+      global.TeachApp.showToast(
+        error ? `บันทึกรายชื่อครูไม่สำเร็จ: ${error.message}` : "บันทึกรายชื่อครูและตารางสอนแล้ว",
+        error ? "error" : "success"
+      );
+    }
+  }
 
   async function initAdminPage() {
     const container = document.getElementById('view-admin');
@@ -271,11 +295,18 @@
             <p class="text-xs sm:text-sm text-slate-500 mt-1">จัดการตารางสอนสไตล์ Sheet, ตั้งค่าคาบเรียน, ข้อมูลโรงเรียน และเชื่อมต่อฐานข้อมูล Firebase</p>
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center justify-end gap-2">
             <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300/80 shadow-2xs">
               <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               เชื่อมต่อคลาวด์ Firebase แล้ว (arrange-c24b2)
             </span>
+
+            <button id="btn-open-reset-confirm" type="button"
+              class="btn-press hover-lift-sm inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200/80 transition-colors cursor-pointer shadow-2xs"
+              title="ล้างประวัติการลาและการสอนแทน">
+              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+              ล้างประวัติ
+            </button>
 
             <button id="btn-lock-admin" 
               class="btn-press hover-lift-sm inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-600 text-xs font-bold rounded-xl border border-slate-200/80 transition-colors cursor-pointer shadow-2xs"
@@ -325,6 +356,7 @@
     });
 
     renderActiveTabContent();
+    renderResetDialog(container);
     if (window.lucide) window.lucide.createIcons();
   }
 
@@ -343,6 +375,120 @@
     }
 
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  function renderResetDialog(container) {
+    const dialogHost = document.createElement('div');
+    dialogHost.innerHTML = `
+        <div id="reset-data-modal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="reset-modal-title">
+          <div class="w-full max-w-md rounded-2xl bg-white p-5 sm:p-6 shadow-2xl border border-slate-200">
+            <div class="flex items-start gap-3">
+              <span class="p-2.5 rounded-xl bg-rose-100 text-rose-700 shrink-0"><i data-lucide="triangle-alert" class="w-5 h-5"></i></span>
+              <div>
+                <h3 id="reset-modal-title" class="text-base font-bold text-slate-900">ยืนยันการล้างประวัติ</h3>
+                <p class="text-sm text-slate-600 mt-1">จะลบประวัติการลาและการสอนแทนทั้งหมดที่บันทึกไว้ และย้อนคืนไม่ได้</p>
+              </div>
+            </div>
+
+            <div id="reset-confirm-step" class="mt-5">
+              <p class="text-sm text-slate-700">รายชื่อครู ตารางสอน คาบเรียน และการตั้งค่าโรงเรียนจะยังคงอยู่ กดดำเนินการต่อเพื่อกรอกรหัสแอดมินยืนยันอีกครั้ง</p>
+              <div class="flex justify-end gap-2 mt-5">
+                <button type="button" id="btn-cancel-reset" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold">ยกเลิก</button>
+                <button type="button" id="btn-continue-reset" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold">ดำเนินการต่อ</button>
+              </div>
+            </div>
+
+            <form id="reset-pin-step" class="hidden mt-5">
+              <label for="reset-admin-pin" class="block text-sm font-semibold text-slate-700 mb-2">กรอกรหัสแอดมินเพื่อยืนยัน</label>
+              <input id="reset-admin-pin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="4" pattern="[0-9]{4}" required
+                class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-center text-lg tracking-[0.5em] focus:ring-2 focus:ring-rose-500 outline-none" aria-describedby="reset-pin-error">
+              <p id="reset-pin-error" class="hidden mt-2 text-sm text-rose-700" role="alert">รหัสไม่ถูกต้อง กรุณาลองอีกครั้ง</p>
+              <div class="flex justify-end gap-2 mt-5">
+                <button type="button" id="btn-back-reset" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold">ย้อนกลับ</button>
+                <button type="submit" id="btn-confirm-reset" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold">ยืนยันและล้างประวัติ</button>
+              </div>
+            </form>
+          </div>
+        </div>
+    `;
+    const dialogElement = dialogHost.firstElementChild;
+    if (!dialogElement) return;
+    container.appendChild(dialogElement);
+
+    const modal = container.querySelector('#reset-data-modal');
+    const confirmStep = container.querySelector('#reset-confirm-step');
+    const pinStep = container.querySelector('#reset-pin-step');
+    const pinInput = container.querySelector('#reset-admin-pin');
+    const pinError = container.querySelector('#reset-pin-error');
+    const confirmButton = container.querySelector('#btn-confirm-reset');
+
+    const closeModal = () => {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      confirmStep.classList.remove('hidden');
+      pinStep.classList.add('hidden');
+      pinInput.value = '';
+      pinError.classList.add('hidden');
+      openButton.focus();
+    };
+
+    const openButton = container.querySelector('#btn-open-reset-confirm');
+    openButton.addEventListener('click', () => {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      container.querySelector('#btn-continue-reset').focus();
+    });
+    const closeButton = container.querySelector('#btn-cancel-reset');
+    closeButton.addEventListener('click', closeModal);
+    container.querySelector('#btn-continue-reset').addEventListener('click', () => {
+      confirmStep.classList.add('hidden');
+      pinStep.classList.remove('hidden');
+      pinInput.focus();
+    });
+    container.querySelector('#btn-back-reset').addEventListener('click', () => {
+      pinStep.classList.add('hidden');
+      confirmStep.classList.remove('hidden');
+      pinError.classList.add('hidden');
+      pinInput.value = '';
+    });
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) closeModal();
+    });
+    modal.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !confirmButton.disabled) closeModal();
+    });
+    pinStep.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      pinError.classList.add('hidden');
+      if (pinInput.value !== getStoredPin()) {
+        pinError.classList.remove('hidden');
+        pinInput.value = '';
+        pinInput.focus();
+        return;
+      }
+
+      confirmButton.disabled = true;
+      confirmButton.textContent = 'กำลังล้างประวัติ...';
+      try {
+        if (typeof clearSubstitutionHistory !== 'function') {
+          throw new Error('ไม่พบฟังก์ชันล้างประวัติ กรุณารีโหลดหน้าเว็บแล้วลองใหม่');
+        }
+        const deletedCount = await clearSubstitutionHistory();
+        pinStep.innerHTML = `
+          <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center text-emerald-900">
+            <p class="font-bold">ล้างประวัติเรียบร้อยแล้ว</p>
+            <p class="text-sm mt-1">ลบรายการ ${deletedCount} รายการ ระบบกำลังโหลดข้อมูลใหม่</p>
+          </div>
+        `;
+        setTimeout(() => window.location.reload(), 900);
+      } catch (error) {
+        confirmButton.disabled = false;
+        confirmButton.textContent = 'ยืนยันและล้างประวัติ';
+        pinError.textContent = error.message || 'ล้างประวัติไม่สำเร็จ กรุณาลองใหม่';
+        pinError.classList.remove('hidden');
+        console.error('Clear substitution history error:', error);
+      }
+    });
   }
 
   // -------------------------------------------------------------
@@ -1010,7 +1156,7 @@
     });
 
     container.querySelectorAll('.teacher-name-input').forEach(input => {
-      input.addEventListener('change', (e) => {
+      input.addEventListener('change', async (e) => {
         const idx = parseInt(e.target.dataset.index);
         const oldName = e.target.dataset.oldname || activeTeachers[idx];
         const newName = e.target.value.trim();
@@ -1019,11 +1165,17 @@
           delete activeTeacherGrades[oldName];
           activeTeachers[idx] = newName;
           e.target.dataset.oldname = newName;
+          try {
+            await saveTeacherRosterAndTimetables();
+            showRosterSaveResult();
+          } catch (error) {
+            showRosterSaveResult(error);
+          }
         }
       });
     });
 
-    document.getElementById('btn-add-teacher-row').addEventListener('click', () => {
+    document.getElementById('btn-add-teacher-row').addEventListener('click', async () => {
       const newName = prompt("กรุณาระบุชื่อ-นามสกุลของคุณครูท่านใหม่:");
       if (newName && newName.trim()) {
         const trimmed = newName.trim();
@@ -1035,11 +1187,17 @@
           activeTimetables[d].push(["", "", "", "", "", "", ""]);
         });
         renderSpreadsheetTab(container);
+        try {
+          await saveTeacherRosterAndTimetables();
+          showRosterSaveResult();
+        } catch (error) {
+          showRosterSaveResult(error);
+        }
       }
     });
 
     container.querySelectorAll('.btn-delete-teacher-row').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         const idx = parseInt(e.currentTarget.dataset.index);
         const name = activeTeachers[idx];
         if (confirm(`ต้องการลบคุณครู "${name}" ออกจากระบบใช่หรือไม่?`)) {
@@ -1050,6 +1208,12 @@
             if (activeTimetables[d]) activeTimetables[d].splice(idx, 1);
           });
           renderSpreadsheetTab(container);
+          try {
+            await saveTeacherRosterAndTimetables();
+            showRosterSaveResult();
+          } catch (error) {
+            showRosterSaveResult(error);
+          }
         }
       });
     });

@@ -138,6 +138,172 @@ body {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
+/* Custom Thai date picker for the substitute day selector */
+.sub-date-picker {
+  position: relative;
+  z-index: 30;
+  min-width: 264px;
+  max-width: 100%;
+  font-family: var(--font-ui);
+}
+.sub-date-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 13px;
+  border: 1px solid #c7d2fe;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.sub-date-trigger:hover,
+.sub-date-trigger[aria-expanded="true"] {
+  border-color: #818cf8;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+.sub-date-trigger:focus-visible,
+.sub-date-calendar button:focus-visible,
+.sub-date-calendar select:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+.sub-date-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sub-date-value {
+  flex: 1;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sub-date-calendar {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: 286px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16), 0 4px 10px rgba(15, 23, 42, 0.06);
+  color: #1e293b;
+}
+.sub-date-calendar[hidden] { display: none !important; }
+.sub-date-calendar-header,
+.sub-date-calendar-nav,
+.sub-date-calendar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sub-date-calendar-header { min-height: 34px; margin-bottom: 8px; }
+.sub-date-calendar-heading { min-width: 0; }
+.sub-date-month-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sub-date-month-title:hover { background: #f1f5f9; }
+.sub-date-month-title span { color: #64748b; font-size: 11px; }
+.sub-date-calendar-nav { gap: 4px; }
+.sub-date-calendar-nav button {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sub-date-calendar-nav button:hover { background: #eef2ff; color: #4f46e5; }
+.sub-date-month-year-controls { display: flex; gap: 6px; }
+.sub-date-month-year-controls select {
+  max-width: 142px;
+  padding: 5px 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+}
+.sub-date-calendar-weekdays,
+.sub-date-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  text-align: center;
+}
+.sub-date-calendar-weekdays { margin-bottom: 4px; }
+.sub-date-calendar-weekdays span {
+  display: grid;
+  height: 28px;
+  place-items: center;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sub-date-calendar-grid { grid-auto-rows: 32px; }
+.sub-date-day {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  justify-self: center;
+  border: 1px solid transparent !important;
+  border-radius: 10px;
+  background: transparent;
+  color: #334155;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.sub-date-day:hover { background: #eef2ff; color: #4338ca; }
+.sub-date-day.is-outside-month { color: #cbd5e1; }
+.sub-date-day.is-today { border-color: #a5b4fc !important; color: #4338ca; font-weight: 700; }
+.sub-date-day.is-selected { border-color: #4f46e5 !important; background: #4f46e5; color: #ffffff; font-weight: 700; }
+.sub-date-day.is-selected:hover { background: #4338ca; color: #ffffff; }
+.sub-date-calendar-footer {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #f1f5f9;
+}
+.sub-date-today-hint { color: #94a3b8; font-size: 10px; }
+.sub-date-calendar-footer button {
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sub-date-calendar-footer button:hover { background: #e0e7ff; }
+@media (max-width: 480px) {
+  .sub-date-picker { min-width: 0; width: 100%; }
+  .sub-date-calendar { right: auto; left: 0; width: min(286px, calc(100vw - 32px)); }
+}
+
 /* Official Document Sheet Layout */
 .a4-page-preview {
   width: 210mm;
@@ -153,6 +319,9 @@ body {
   color: #000000;
   position: relative;
 }
+.a4-page-preview.single-teacher-page {
+  justify-content: flex-start;
+}
 
 /* Official Document Table */
 .gov-table {
@@ -164,7 +333,7 @@ body {
   margin-bottom: 8px;
   font-family: var(--font-doc);
   font-size: 13.5px;
-  border: 0.5px solid #000000 !important;
+  border: 0 !important;
 }
 .gov-table th,
 .gov-table td,
@@ -174,7 +343,7 @@ body {
 
 .gov-table th,
 .gov-table td {
-  border: 0.5px solid #000000 !important;
+  border: 0.75pt solid #000000 !important;
   padding: 0 !important;
   text-align: center;
   vertical-align: middle !important;
@@ -190,14 +359,12 @@ body {
   vertical-align: middle !important;
   padding: 0 !important;
   height: 100% !important;
-  border: 0.5px solid #000000 !important;
 }
 
 .gov-table th.cell-lunch-break {
   vertical-align: middle !important;
   padding: 0 !important;
   height: 100% !important;
-  border: 0.5px solid #000000 !important;
 }
 
 /* Vertical Text for Lunch Break (Fallback) */
@@ -266,11 +433,11 @@ body {
     border-spacing: 0 !important;
     table-layout: fixed !important;
     width: 100% !important;
-    border: none !important;
+    border: 0 !important;
   }
   .gov-table th,
   .gov-table td {
-    border: 0.5px solid #444444 !important;
+    border: 0.75pt solid #000000 !important;
     padding: 0 !important;
     box-sizing: border-box !important;
     vertical-align: middle !important;
@@ -278,6 +445,50 @@ body {
   .gov-table th {
     padding: 4px 2px !important;
   }
+
+  .teacher-stats-print-report {
+    display: block !important;
+    width: 100% !important;
+    color: #111827 !important;
+    font-family: var(--font-doc) !important;
+    font-size: 14pt !important;
+  }
+  .teacher-stats-report-header {
+    margin-bottom: 7mm !important;
+    text-align: center !important;
+    line-height: 1.6 !important;
+  }
+  .teacher-stats-report-header h1 {
+    margin: 0 0 2mm !important;
+    font-size: 22pt !important;
+    font-weight: 700 !important;
+  }
+  .teacher-stats-report-header div { font-size: 12pt !important; }
+  .teacher-stats-print-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+    font-family: var(--font-doc) !important;
+    font-size: 14pt !important;
+  }
+  .teacher-stats-print-table th,
+  .teacher-stats-print-table td {
+    border: 0.75pt solid #000000 !important;
+    padding: 2.2mm 1.5mm !important;
+    vertical-align: middle !important;
+    overflow-wrap: anywhere !important;
+  }
+  .teacher-stats-print-table th {
+    background: #f1f5f9 !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+  }
+  .teacher-stats-print-table th:first-child { width: 14mm !important; white-space: nowrap !important; }
+  .teacher-stats-print-table th:nth-child(2) { width: 57mm !important; text-align: left !important; }
+  .teacher-stats-print-table th:nth-child(n+3) { width: 21mm !important; }
+  .teacher-stats-print-table .report-center { text-align: center !important; }
+  .teacher-stats-print-table thead { display: table-header-group !important; }
+  .teacher-stats-print-table tr { page-break-inside: avoid !important; break-inside: avoid !important; }
 
   .doc-subject-text {
     background-color: transparent !important;

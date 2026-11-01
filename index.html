@@ -23,16 +23,12 @@
   <!-- ExcelJS (Excel .xlsx generator with custom font & styles) -->
   <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 
-  <!-- Client-side Direct PDF Generation (html2canvas 1.4.1 + jsPDF 2.5.1) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
   <!-- Firebase SDK v10 (Compat Mode) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- Custom Styles & Print Styles -->
-  <link rel="stylesheet" href="css/style.css?v=3.2">
+  <link rel="stylesheet" href="css/style.css?v=4.5">
 
   <script>
     if (window.tailwind) {
@@ -73,18 +69,18 @@
 
         <!-- Navigation Tabs (Modern Segmented Glass Style) -->
         <nav id="app-tabs" class="flex items-center p-1 bg-slate-100/80 backdrop-blur-xs rounded-2xl border border-slate-200/60 gap-1">
-          <button class="nav-tab-btn" data-tab="substitute" onclick="window.TeachApp && window.TeachApp.switchTab('substitute')">
+          <button class="nav-tab-btn" data-tab="substitute">
             <i data-lucide="calendar-check" class="w-4 h-4"></i>
             <span>จัดสอนแทน</span>
           </button>
 
-          <button class="nav-tab-btn" data-tab="teacher-stats" onclick="window.TeachApp && window.TeachApp.switchTab('teacher-stats')">
+          <button class="nav-tab-btn" data-tab="teacher-stats">
             <i data-lucide="users" class="w-4 h-4"></i>
             <span class="hidden sm:inline">วันลาและการสอนแทน</span>
             <span class="sm:hidden">วันลา & สอนแทน</span>
           </button>
 
-          <button class="nav-tab-btn" data-tab="admin" onclick="window.TeachApp && window.TeachApp.switchTab('admin')">
+          <button class="nav-tab-btn" data-tab="admin">
             <i data-lucide="shield-check" class="w-4 h-4"></i>
             <span>แอดมิน</span>
           </button>
@@ -164,18 +160,18 @@
             </select>
           </div>
 
-          <!-- 1. ปุ่ม PDF (บังคับเซฟไฟล์ PDF) -->
+          <!-- 1. เปิดหน้าพิมพ์เพื่อบันทึกเป็น PDF -->
           <button id="btn-save-pdf" 
             class="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-            title="บันทึกและดาวน์โหลดเป็นไฟล์ PDF ลงในเครื่องทันที">
+            title="เปิดหน้าพิมพ์ แล้วเลือกบันทึกเป็น PDF">
             <i data-lucide="file-down" class="w-4 h-4"></i>
             <span>PDF</span>
           </button>
 
-          <!-- 2. ปุ่ม พิมพ์ (ส่งไปหน้าพิมพ์ Print Dialog) -->
+          <!-- 2. พิมพ์เอกสาร (ใช้หน้าพิมพ์เดียวกับปุ่ม PDF) -->
           <button id="btn-print-now" 
             class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-            title="ส่งไปยังหน้าพิมพ์ (Print)">
+            title="เปิดหน้าพิมพ์ แล้วเลือกเครื่องพิมพ์">
             <i data-lucide="printer" class="w-4 h-4"></i>
             <span>พิมพ์</span>
           </button>
@@ -281,11 +277,11 @@
   </div>
 
   <!-- App Scripts in Order (Works seamlessly with file:/// and http(s)://) -->
-  <script src="js/data.js?v=3.2"></script>
+  <script src="js/data.js?v=3.3"></script>
   <script src="js/firebaseClient.js?v=3.2"></script>
-  <script src="js/substitute.js?v=3.2"></script>
-  <script src="js/teacherStats.js?v=3.2"></script>
-  <script src="js/adminSheet.js?v=3.2"></script>
-  <script src="js/app.js?v=3.2"></script>
+  <script src="js/substitute.js?v=3.6"></script>
+  <script src="js/teacherStats.js?v=3.4"></script>
+  <script src="js/adminSheet.js?v=3.3"></script>
+  <script src="js/app.js?v=3.4"></script>
 </body>
 </html>
