@@ -304,6 +304,493 @@ body {
   .sub-date-calendar { right: auto; left: 0; width: min(286px, calc(100vw - 32px)); }
 }
 
+/* -------------------------------------------------------------
+ * Mobile application layout
+ * ------------------------------------------------------------- */
+@media screen and (max-width: 767px) {
+  html,
+  body {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  #app-header > div > div {
+    height: auto;
+    min-height: 0;
+    padding-top: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  #app-header > div {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  #app-header > div > div > .flex.items-center.gap-3 {
+    min-width: 0;
+    gap: 9px;
+  }
+
+  #nav-school-logo-wrapper {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  #nav-school-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+  }
+
+  #nav-school-name + p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+  }
+
+  #app-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    padding: 3px;
+    border-radius: 14px;
+  }
+
+  #app-tabs .nav-tab-btn {
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    min-height: 40px;
+    padding: 6px 4px;
+    border-radius: 11px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  #app-tabs .nav-tab-btn svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+  }
+
+  #app-tabs .nav-tab-btn[data-tab="teacher-stats"] span:first-of-type {
+    display: none !important;
+  }
+
+  #app-tabs .nav-tab-btn[data-tab="teacher-stats"] span:last-of-type {
+    display: inline !important;
+  }
+
+  #app-view-container {
+    padding: 14px 10px 22px;
+  }
+
+  #view-substitute > div,
+  #view-teacher-stats > div,
+  #view-admin > div {
+    gap: 14px;
+  }
+
+  #view-substitute > div {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
+  }
+
+  #view-substitute .glass-card,
+  #view-teacher-stats .glass-card {
+    border-radius: 18px;
+  }
+
+  #view-substitute .glass-card:first-child {
+    padding: 14px;
+  }
+
+  #view-substitute .sub-date-picker,
+  #view-substitute #btn-view-day-timetable {
+    width: 100%;
+  }
+
+  #view-substitute #btn-view-day-timetable {
+    justify-content: center;
+    min-height: 42px;
+  }
+
+  #view-substitute #btn-add-absent-teacher {
+    min-height: 40px;
+    padding-left: 12px;
+    padding-right: 12px;
+    white-space: nowrap;
+  }
+
+  #view-substitute .absent-teacher-select {
+    width: min(100%, 16rem);
+  }
+
+  #view-substitute .fixed.bottom-6.right-6,
+  #view-substitute .fixed.bottom-8.right-8 {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+
+  #btn-preview-pdf {
+    min-height: 48px;
+    padding: 11px 16px;
+    font-size: 12px;
+  }
+
+  /* Present the statistics list as readable, tappable cards on phones. */
+  #view-teacher-stats .overflow-x-auto {
+    overflow: visible;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table {
+    display: block;
+    width: 100%;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table thead {
+    display: none;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody > tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 8px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 2px 5px rgba(15, 23, 42, 0.035);
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody > tr > td {
+    min-width: 0;
+    padding: 5px 0;
+    border: 0;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody > tr > td:first-child {
+    display: none;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody > tr > td:nth-child(2) {
+    grid-column: 1 / -1;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 14px;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody > tr > td:nth-child(3) {
+    grid-column: 1 / -1;
+    padding-top: 8px;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody > tr > td:nth-child(4),
+  #view-teacher-stats .overflow-x-auto > table tbody > tr > td:nth-child(5) {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  #view-teacher-stats .overflow-x-auto > table tbody > tr > td[colspan] {
+    display: block !important;
+    grid-column: 1 / -1 !important;
+  }
+
+  #view-teacher-stats .btn-view-history {
+    min-height: 40px;
+  }
+
+  /* Keep admin tools reachable while allowing the timetable to scroll naturally. */
+  #view-admin .max-w-7xl > .inline-flex {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 3px;
+    overflow: visible;
+  }
+
+  #view-admin .max-w-7xl > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 14px;
+  }
+
+  #view-admin .max-w-7xl > .glass-card:first-child {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  #view-admin .max-w-7xl > .glass-card:first-child h2 {
+    gap: 8px;
+    font-size: 16px;
+    line-height: 1.3;
+  }
+
+  #view-admin .max-w-7xl > .glass-card:first-child h2 > span:first-child {
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  #view-admin .admin-title-en,
+  #view-admin .admin-description-full,
+  #view-admin .admin-cloud-label-full,
+  #view-admin .admin-tab-label-wide {
+    display: none !important;
+  }
+
+  #view-admin .admin-description-compact,
+  #view-admin .admin-cloud-label-compact,
+  #view-admin .admin-tab-label-mobile {
+    display: inline !important;
+  }
+
+  #view-admin .max-w-7xl > .glass-card:first-child > .flex.flex-wrap.items-center.justify-end {
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  #view-admin .admin-cloud-label-compact {
+    font-size: 10px;
+  }
+
+  #view-admin .max-w-7xl > .glass-card:first-child button {
+    min-height: 36px;
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+
+  #view-admin .admin-tab-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 40px;
+    padding: 6px 4px;
+    gap: 4px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  #view-admin .admin-tab-btn svg {
+    width: 14px;
+    height: 14px;
+    margin: 0 !important;
+    flex: 0 0 auto;
+  }
+
+  #view-admin .sheet-scroll {
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #view-admin .sheet-scroll > table.sheet-table {
+    width: 1360px;
+    min-width: 1360px;
+    table-layout: fixed;
+  }
+
+  #view-admin .overflow-x-auto > table:not(.sheet-table) {
+    width: max-content;
+    min-width: 820px;
+  }
+
+  /* Excel import review table: keep every column readable and scroll within the dialog. */
+  #excel-analysis-modal {
+    padding: 8px;
+    align-items: stretch;
+  }
+
+  #excel-analysis-modal > .glass-card {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: 18px;
+  }
+
+  #excel-analysis-modal > .glass-card > .px-6.py-4 {
+    padding: 12px;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  #excel-analysis-modal > .glass-card > .px-6.py-4 > .flex.items-center.gap-3 {
+    min-width: 0;
+  }
+
+  #excel-analysis-modal h3 {
+    flex-wrap: wrap;
+    line-height: 1.4;
+  }
+
+  #excel-analysis-modal p,
+  #excel-analysis-modal .font-bold.text-emerald-800 {
+    overflow-wrap: anywhere;
+  }
+
+  #excel-analysis-modal .flex-1.overflow-y-auto {
+    min-height: 0;
+    overflow-x: auto;
+    padding: 12px;
+  }
+
+  #excel-analysis-modal .flex-1.overflow-y-auto > .border {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #excel-analysis-modal .flex-1.overflow-y-auto table {
+    width: 760px;
+    min-width: 760px;
+  }
+
+  #excel-analysis-modal > .glass-card > .px-6.py-4:last-child {
+    padding: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #excel-analysis-modal #btn-confirm-apply-excel {
+    min-height: 44px;
+    width: 100%;
+    justify-content: center;
+    padding: 10px 12px;
+    white-space: normal;
+    text-align: center;
+  }
+
+  /* Day timetable modal: scroll the full schedule instead of squeezing lesson names. */
+  #day-timetable-modal > div {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: 18px;
+  }
+
+  #day-timetable-modal .flex-1.overflow-auto {
+    min-height: 0;
+    padding: 10px;
+  }
+
+  #day-timetable-modal .flex-1.overflow-auto > .overflow-hidden {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #day-timetable-modal .flex-1.overflow-auto table {
+    width: 1000px;
+    min-width: 1000px;
+    table-layout: fixed;
+  }
+
+  #day-timetable-modal .px-5.py-4 {
+    padding: 12px;
+  }
+
+  #day-timetable-modal .px-5.py-3 {
+    padding: 10px 12px;
+  }
+
+  /* Keep long names, subjects and rooms visible inside history cards. */
+  #teacher-history-modal #modal-history-content .glass-card {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  #teacher-history-modal #modal-history-content .glass-card.flex.items-center.justify-between {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #teacher-history-modal #modal-history-content .glass-card.flex.items-center.justify-between > button {
+    align-self: flex-end;
+  }
+
+  /* Stack print controls and let the A4 preview pan inside its own viewport. */
+  #pdf-preview-modal {
+    padding: 6px;
+    align-items: stretch;
+  }
+
+  #pdf-preview-modal > div {
+    width: 100%;
+    height: calc(100dvh - 12px);
+    max-height: none;
+    border-radius: 18px;
+  }
+
+  #pdf-preview-modal > div > .px-6.py-4 {
+    padding: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #pdf-preview-modal > div > .px-6.py-4 > .flex.items-center.gap-2\.5 {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #pdf-preview-modal > div > .px-6.py-4 > .flex.items-center.gap-2 {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    gap: 6px;
+  }
+
+  #select-pdf-doc-subject {
+    max-width: 100%;
+    min-width: 0;
+    font-size: 11px;
+  }
+
+  #btn-save-pdf,
+  #btn-print-now {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  #pdf-preview-modal #pdf-drawer-handle {
+    top: 10px;
+    padding: 9px;
+    min-height: 52px;
+  }
+
+  #pdf-preview-modal #pdf-drawer-handle > div,
+  #pdf-preview-modal #pdf-drawer-handle > i {
+    display: none;
+  }
+
+  #pdf-preview-modal #pdf-teacher-drawer {
+    width: min(340px, calc(100vw - 48px));
+  }
+
+  #pdf-preview-modal > div > .relative.flex-1 > .flex-1.overflow-y-auto {
+    padding: 10px 6px;
+  }
+
+  #pdf-preview-content {
+    width: max-content;
+  }
+
+  #teacher-history-modal {
+    padding: 8px;
+  }
+
+  #teacher-history-modal > div {
+    max-height: calc(100dvh - 16px);
+    border-radius: 18px;
+  }
+}
+
 /* Official Document Sheet Layout */
 .a4-page-preview {
   width: 210mm;

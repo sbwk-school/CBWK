@@ -290,15 +290,19 @@
               <span class="p-2.5 bg-gradient-to-tr from-slate-800 to-slate-950 text-white rounded-2xl shadow-sm">
                 <i data-lucide="layout-grid" class="w-5 h-5 sm:w-6 sm:h-6"></i>
               </span>
-              จัดการระบบแอดมิน (Admin Panel)
+              จัดการระบบแอดมิน <span class="admin-title-en hidden sm:inline">(Admin Panel)</span>
             </h2>
-            <p class="text-xs sm:text-sm text-slate-500 mt-1">จัดการตารางสอนสไตล์ Sheet, ตั้งค่าคาบเรียน, ข้อมูลโรงเรียน และเชื่อมต่อฐานข้อมูล Firebase</p>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">
+              <span class="admin-description-full hidden sm:inline">จัดการตารางสอนสไตล์ Sheet, ตั้งค่าคาบเรียน, ข้อมูลโรงเรียน และเชื่อมต่อฐานข้อมูล Firebase</span>
+              <span class="admin-description-compact sm:hidden">ตั้งค่าระบบและตารางสอน</span>
+            </p>
           </div>
 
           <div class="flex flex-wrap items-center justify-end gap-2">
             <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300/80 shadow-2xs">
               <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              เชื่อมต่อคลาวด์ Firebase แล้ว (arrange-c24b2)
+              <span class="admin-cloud-label-full hidden sm:inline">เชื่อมต่อคลาวด์ Firebase แล้ว (arrange-c24b2)</span>
+              <span class="admin-cloud-label-compact sm:hidden">เชื่อมต่อแล้ว</span>
             </span>
 
             <button id="btn-open-reset-confirm" type="button"
@@ -322,17 +326,19 @@
           <button class="admin-tab-btn btn-press px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${activeAdminTab === 'school' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}"
             data-tab="school">
             <i data-lucide="building-2" class="w-4 h-4 inline mr-1.5 text-amber-500"></i>
-            ข้อมูลโรงเรียน & ผู้บริหาร
+            <span class="admin-tab-label-wide hidden sm:inline">ข้อมูลโรงเรียน & ผู้บริหาร</span>
+            <span class="admin-tab-label-mobile sm:hidden">โรงเรียน</span>
           </button>
           <button class="admin-tab-btn btn-press px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${activeAdminTab === 'periods' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}"
             data-tab="periods">
             <i data-lucide="clock" class="w-4 h-4 inline mr-1.5 text-blue-500"></i>
-            คาบเรียน & รายชื่อครู
+            <span class="admin-tab-label-wide hidden sm:inline">คาบเรียน & รายชื่อครู</span>
+            <span class="admin-tab-label-mobile sm:hidden">คาบ & ครู</span>
           </button>
           <button class="admin-tab-btn btn-press px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${activeAdminTab === 'sheet' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}"
             data-tab="sheet">
             <i data-lucide="sheet" class="w-4 h-4 inline mr-1.5 text-indigo-500"></i>
-            ตารางสอน
+            <span>ตารางสอน</span>
           </button>
         </div>
 
