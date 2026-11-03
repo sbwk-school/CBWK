@@ -1003,5 +1003,6 @@ body {
   .doc-subject-text {
     background-color: transparent !important;
     outline: none !important;
+    padding: 0 !important;
   }
 }

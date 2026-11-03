@@ -19,7 +19,7 @@
     directorName: "ภาคภูมิ บัวทอง",
     directorPosition: "ตำแหน่งผู้อำนวยการโรงเรียนชุมชนบ้านวังพิกุล",
     logoUrl: "",
-    logoHeight: 80
+    logoHeight: 120
   };
 
   const DEFAULT_PERIODS = [

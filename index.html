@@ -28,7 +28,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- Custom Styles & Print Styles -->
-  <link rel="stylesheet" href="css/style.css?v=4.9">
+  <link rel="stylesheet" href="css/style.css?v=5.0">
 
   <script>
     if (window.tailwind) {
@@ -130,40 +130,40 @@
     <div class="bg-slate-100 rounded-3xl shadow-2xl border border-slate-300 w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       
       <!-- Modal Top Bar -->
-      <div class="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
-        <div class="flex items-center gap-2.5">
-          <span class="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+      <div class="px-4 sm:px-6 py-3.5 bg-white border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+        <div class="flex items-center gap-2.5 shrink-0">
+          <span class="p-2 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
             <i data-lucide="file-text" class="w-5 h-5"></i>
           </span>
-          <div>
-            <h3 class="text-base font-bold text-slate-800">ตัวอย่างแบบบันทึกการมอบหมายงานสอนแทน (ขนาด A4)</h3>
-            <p class="text-xs text-slate-500">ตรวจสอบความถูกต้องก่อนสั่งพิมพ์หรือบันทึกเป็น PDF</p>
+          <div class="shrink-0">
+            <h3 class="text-sm sm:text-base font-bold text-slate-800 whitespace-nowrap">ตัวอย่างแบบบันทึกการมอบหมายงานสอนแทน (A4)</h3>
+            <p class="text-[11px] sm:text-xs text-slate-500 whitespace-nowrap hidden sm:block">ตรวจสอบความถูกต้องก่อนสั่งพิมพ์หรือบันทึกเป็น PDF</p>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <!-- ตัวเลือกหัวข้อระดับชั้น (Doc Subject Selector) -->
-          <div class="flex items-center gap-1.5 bg-slate-100 py-1 px-2.5 rounded-xl border border-slate-200">
-            <label for="select-pdf-doc-subject" class="text-xs font-bold text-slate-500 whitespace-nowrap hidden sm:flex items-center gap-1">
+          <div class="flex items-center gap-1.5 bg-slate-100 py-1 px-2.5 rounded-xl border border-slate-200 shrink-0">
+            <label for="select-pdf-doc-subject" class="text-xs font-bold text-slate-500 whitespace-nowrap flex items-center gap-1">
               <i data-lucide="layers" class="w-3.5 h-3.5 text-indigo-500"></i>
-              <span>ช่วงชั้น:</span>
+              <span class="hidden md:inline">ช่วงชั้น:</span>
             </label>
             <select id="select-pdf-doc-subject" 
-              class="bg-white border border-slate-200 text-xs font-bold text-slate-700 py-1.5 px-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+              class="bg-white border border-slate-200 text-xs font-bold text-slate-700 py-1 px-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs max-w-[170px] sm:max-w-[210px]"
               title="เลือกระดับชั้นของหัวข้อเรื่องในเอกสาร">
-              <option value="ALL" selected>🌐 ประถมศึกษาปีที่ 1 – มัธยมศึกษาปีที่ 3 (รวมทั้งหมด)</option>
-              <option value="AUTO">⚡ อัตโนมัติ (ตามครูที่เลือก)</option>
-              <option value="อนุบาล">🟠 ระดับชั้นอนุบาล</option>
-              <option value="ป.1-3">🟢 ประถมศึกษาปีที่ 1 – 3</option>
-              <option value="ป.4-6">🔴 ประถมศึกษาปีที่ 4 – 6</option>
-              <option value="ม.1-3">🔵 มัธยมศึกษาปีที่ 1 – 3</option>
-              <option value="ม.4-6">🟣 มัธยมศึกษาปีที่ 4 – 6</option>
+              <option value="ALL" selected>🌐 ป.1 – ม.3 (รวม)</option>
+              <option value="AUTO">⚡ อัตโนมัติ</option>
+              <option value="อนุบาล">🟠 อนุบาล</option>
+              <option value="ป.1-3">🟢 ป.1-3</option>
+              <option value="ป.4-6">🔴 ป.4-6</option>
+              <option value="ม.1-3">🔵 ม.1-3</option>
+              <option value="ม.4-6">🟣 ม.4-6</option>
             </select>
           </div>
 
           <!-- 1. เปิดหน้าพิมพ์เพื่อบันทึกเป็น PDF -->
           <button id="btn-save-pdf" 
-            class="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            class="px-3.5 sm:px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
             title="เปิดหน้าพิมพ์ แล้วเลือกบันทึกเป็น PDF">
             <i data-lucide="file-down" class="w-4 h-4"></i>
             <span>PDF</span>
@@ -171,14 +171,14 @@
 
           <!-- 2. พิมพ์เอกสาร (ใช้หน้าพิมพ์เดียวกับปุ่ม PDF) -->
           <button id="btn-print-now" 
-            class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            class="px-3.5 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
             title="เปิดหน้าพิมพ์ แล้วเลือกเครื่องพิมพ์">
             <i data-lucide="printer" class="w-4 h-4"></i>
             <span>พิมพ์</span>
           </button>
 
           <button id="btn-close-pdf-modal" 
-            class="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer ml-1"
+            class="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer shrink-0 ml-0.5"
             title="ปิดหน้าต่างนี้">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
@@ -284,12 +284,54 @@
     </div>
   </div>
 
+  <!-- ========================================== -->
+  <!-- Modal: ยืนยันรหัสผ่านแอดมินก่อนลบข้อมูล (Global Admin PIN Confirm Modal) -->
+  <!-- ========================================== -->
+  <div id="admin-pin-confirm-modal" class="fixed inset-0 bg-slate-900/75 backdrop-blur-sm z-[99999] hidden items-center justify-center p-4 no-print" style="z-index: 99999 !important;">
+    <div id="admin-pin-modal-card" class="relative bg-white rounded-3xl shadow-2xl border border-slate-200/90 max-w-md w-full p-6 text-center animate-in fade-in zoom-in-95 duration-150 z-10">
+      <div class="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-xs">
+        <i data-lucide="shield-alert" class="w-7 h-7"></i>
+      </div>
+      
+      <h3 id="admin-pin-modal-title" class="text-lg font-bold text-slate-800">ยืนยันรหัสผ่านแอดมินก่อนลบ</h3>
+      <p id="admin-pin-modal-subtitle" class="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
+        ระบบต้องการรหัสผ่านผู้ดูแลระบบ (Admin PIN) เพื่อยืนยันการลบข้อมูลและป้องกันการลบโดยไม่ได้ตั้งใจ
+      </p>
+
+      <!-- รายละเอียดรายการที่จะลบ -->
+      <div id="admin-pin-item-detail" class="text-xs bg-slate-50 border border-slate-200/80 rounded-xl p-3 mb-4 text-slate-700 font-medium text-left leading-relaxed">
+      </div>
+
+      <!-- กล่องกรอกรหัส 4 หลัก -->
+      <div class="mb-4">
+        <label class="block text-xs font-bold text-slate-600 mb-1.5 text-center">กรุณากรอกรหัสแอดมิน 4 หลัก:</label>
+        <input type="password" id="admin-pin-confirm-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="••••" autocomplete="off"
+          class="w-40 mx-auto text-center text-xl tracking-[0.4em] font-black py-2.5 px-4 bg-slate-50 border-2 border-slate-300 rounded-xl focus:border-rose-500 focus:bg-white focus:ring-4 focus:ring-rose-100 outline-none transition-all">
+        <p id="admin-pin-confirm-error" class="text-xs text-rose-600 font-bold mt-2 hidden flex items-center justify-center gap-1">
+          <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+          <span>รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง</span>
+        </p>
+      </div>
+
+      <!-- ปุ่มกดยืนยัน / ยกเลิก -->
+      <div class="flex items-center justify-center gap-2 pt-2 border-t border-slate-100">
+        <button type="button" id="btn-cancel-admin-pin" class="btn-press flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer">
+          ยกเลิก
+        </button>
+        <button type="button" id="btn-submit-admin-pin" class="btn-press flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+          <span id="admin-pin-submit-label">ยืนยันลบข้อมูล</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- App Scripts in Order (Works seamlessly with file:/// and http(s)://) -->
-  <script src="js/data.js?v=3.4"></script>
+  <script src="js/data.js?v=3.7"></script>
   <script src="js/firebaseClient.js?v=3.3"></script>
-  <script src="js/substitute.js?v=3.8"></script>
-  <script src="js/teacherStats.js?v=3.6"></script>
-  <script src="js/adminSheet.js?v=4.3"></script>
-  <script src="js/app.js?v=3.4"></script>
+  <script src="js/substitute.js?v=4.4"></script>
+  <script src="js/teacherStats.js?v=3.7"></script>
+  <script src="js/adminSheet.js?v=4.7"></script>
+  <script src="js/app.js?v=3.5"></script>
 </body>
 </html>

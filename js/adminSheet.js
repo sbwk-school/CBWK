@@ -1377,7 +1377,8 @@
       btn.addEventListener('click', async (e) => {
         const idx = parseInt(e.currentTarget.dataset.index);
         const name = activeTeachers[idx];
-        if (confirm(`ต้องการลบคุณครู "${name}" ออกจากระบบใช่หรือไม่?`)) {
+
+        const doDelete = async () => {
           delete activeTeacherGrades[name];
           activeTeachers.splice(idx, 1);
           const daysList = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"];
@@ -1390,6 +1391,29 @@
             showRosterSaveResult();
           } catch (error) {
             showRosterSaveResult(error);
+          }
+        };
+
+        const confirmFn = (global.TeachApp && global.TeachApp.requestAdminPinConfirm) || global.requestAdminPinConfirm;
+        if (confirmFn) {
+          confirmFn({
+            title: `ยืนยันลบคุณครูออกจากระบบ`,
+            subtitle: "กรุณากรอกรหัสแอดมิน 4 หลัก เพื่อยืนยันการลบคุณครูและตารางสอน",
+            detailHtml: `
+              <div class="flex items-center gap-2 mb-2 font-bold text-slate-800 text-sm">
+                <i data-lucide="user-minus" class="w-4 h-4 text-rose-500"></i>
+                <span>ต้องการลบคุณครู: <span class="text-rose-600 font-black">${name}</span></span>
+              </div>
+              <div class="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200/80 leading-relaxed">
+                ⚠️ การลบจะนำชื่อคุณครู ข้อมูลช่วงชั้น และตารางสอนทั้งหมดของคุณครูท่านนี้ออกจากระบบทันที
+              </div>
+            `,
+            confirmButtonText: "ยืนยันลบคุณครู",
+            onConfirm: doDelete
+          });
+        } else {
+          if (confirm(`ต้องการลบคุณครู "${name}" ออกจากระบบใช่หรือไม่?`)) {
+            await doDelete();
           }
         }
       });
@@ -2043,7 +2067,8 @@
       btn.addEventListener('click', async (e) => {
         const idx = parseInt(e.currentTarget.dataset.index);
         const name = e.currentTarget.dataset.name;
-        if (confirm(`ต้องการลบคุณครู "${name}" ออกจากระบบใช่หรือไม่?`)) {
+
+        const doDelete = async () => {
           delete activeTeacherGrades[name];
           activeTeachers.splice(idx, 1);
           const daysList = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"];
@@ -2056,6 +2081,29 @@
           renderPeriodsTab(container);
           if (global.TeachApp && global.TeachApp.showToast) {
             global.TeachApp.showToast(`ลบคุณครู "${name}" เรียบร้อยแล้ว`, "info");
+          }
+        };
+
+        const confirmFn = (global.TeachApp && global.TeachApp.requestAdminPinConfirm) || global.requestAdminPinConfirm;
+        if (confirmFn) {
+          confirmFn({
+            title: `ยืนยันลบคุณครูจากตารางสอน`,
+            subtitle: "กรุณากรอกรหัสแอดมิน 4 หลัก เพื่อยืนยันการลบคุณครูและตารางสอน",
+            detailHtml: `
+              <div class="flex items-center gap-2 mb-2 font-bold text-slate-800 text-sm">
+                <i data-lucide="user-minus" class="w-4 h-4 text-rose-500"></i>
+                <span>ต้องการลบคุณครู: <span class="text-rose-600 font-black">${name}</span></span>
+              </div>
+              <div class="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200/80 leading-relaxed">
+                ⚠️ การลบจะนำชื่อคุณครู ข้อมูลช่วงชั้น และตารางสอนทั้งหมดของคุณครูท่านนี้ออกจากระบบทันที
+              </div>
+            `,
+            confirmButtonText: "ยืนยันลบคุณครู",
+            onConfirm: doDelete
+          });
+        } else {
+          if (confirm(`ต้องการลบคุณครู "${name}" ออกจากระบบใช่หรือไม่?`)) {
+            await doDelete();
           }
         }
       });
@@ -2345,6 +2393,24 @@
               </div>
             </div>
 
+            <!-- แถบปรับขนาดโลโก้ในใบเอกสาร -->
+            <div class="mt-4 pt-3.5 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div class="flex items-center gap-2">
+                <i data-lucide="maximize-2" class="w-4 h-4 text-indigo-500"></i>
+                <span class="font-bold text-slate-700">ขนาดความสูงของโลโก้ในเอกสารราชการ:</span>
+                <span id="cfg-logo-height-val" class="px-2.5 py-0.5 rounded-lg font-black bg-indigo-50 text-indigo-700 border border-indigo-200/80 text-xs">
+                  ${(s.logoHeight && s.logoHeight >= 80 && s.logoHeight !== 150) ? s.logoHeight : 120} px
+                </span>
+              </div>
+              <div class="flex items-center gap-2.5 w-full sm:w-auto">
+                <span class="text-[11px] text-slate-400 font-semibold">80px (เล็ก)</span>
+                <input type="range" id="cfg-logo-height-slider" min="80" max="180" step="5"
+                  value="${(s.logoHeight && s.logoHeight >= 80 && s.logoHeight !== 150) ? s.logoHeight : 120}"
+                  class="flex-1 sm:w-44 accent-indigo-600 cursor-pointer">
+                <span class="text-[11px] text-slate-400 font-semibold">180px (ใหญ่)</span>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -2527,6 +2593,16 @@
       });
     }
 
+    const logoSlider = container.querySelector('#cfg-logo-height-slider');
+    const logoHeightVal = container.querySelector('#cfg-logo-height-val');
+    if (logoSlider && logoHeightVal) {
+      logoSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value) || 120;
+        logoHeightVal.innerText = `${val} px`;
+        activeSettings.logoHeight = val;
+      });
+    }
+
     // Bind all Save buttons (top and bottom) with reactive state and toast
     container.querySelectorAll('.btn-save-school-action').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -2550,6 +2626,10 @@
         activeSettings.directorPosition = document.getElementById('cfg-director-pos').value;
         activeSettings.docSubject = document.getElementById('cfg-doc-subject').value;
         activeSettings.docDear = document.getElementById('cfg-doc-dear').value;
+
+        if (logoSlider) {
+          activeSettings.logoHeight = parseInt(logoSlider.value) || 120;
+        }
 
         const newPin = document.getElementById('cfg-new-pin').value.trim();
         if (newPin && newPin.length === 4) {
@@ -3339,19 +3419,44 @@
         const hol = (activeCalendar.holidays || []).find(h => h.id === id);
         const name = hol ? hol.name : 'วันหยุด';
 
-        activeCalendar.holidays = (activeCalendar.holidays || []).filter(h => h.id !== id);
+        const doDelete = async () => {
+          activeCalendar.holidays = (activeCalendar.holidays || []).filter(h => h.id !== id);
+          try {
+            if (saveAcademicCalendar) {
+              await saveAcademicCalendar(activeCalendar);
+            }
+            if (global.TeachApp && global.TeachApp.showToast) {
+              global.TeachApp.showToast(`ลบ "${name}" แล้ว`, "success");
+            }
+            renderCalendarTab(container);
+          } catch (err) {
+            if (global.TeachApp && global.TeachApp.showToast) {
+              global.TeachApp.showToast("เกิดข้อผิดพลาด: " + err.message, "error");
+            }
+          }
+        };
 
-        try {
-          if (saveAcademicCalendar) {
-            await saveAcademicCalendar(activeCalendar);
-          }
-          if (global.TeachApp && global.TeachApp.showToast) {
-            global.TeachApp.showToast(`ลบ "${name}" แล้ว`, "success");
-          }
-          renderCalendarTab(container);
-        } catch (err) {
-          if (global.TeachApp && global.TeachApp.showToast) {
-            global.TeachApp.showToast("เกิดข้อผิดพลาด: " + err.message, "error");
+        const confirmFn = (global.TeachApp && global.TeachApp.requestAdminPinConfirm) || global.requestAdminPinConfirm;
+        if (confirmFn) {
+          confirmFn({
+            title: `ยืนยันลบวันหยุด`,
+            subtitle: "กรุณากรอกรหัสแอดมิน 4 หลัก เพื่อยืนยันการลบวันหยุด",
+            detailHtml: `
+              <div class="flex items-center gap-2 mb-2 font-bold text-slate-800 text-sm">
+                <i data-lucide="calendar-x" class="w-4 h-4 text-rose-500"></i>
+                <span>ต้องการลบวันหยุด: <span class="text-rose-600 font-black">${name}</span></span>
+              </div>
+              <div class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 leading-relaxed">
+                <div>• <b>วันที่:</b> <span class="font-bold text-slate-800">${hol ? hol.date : '-'}</span></div>
+                <div>• <b>ประเภท:</b> <span class="font-bold text-indigo-700">${hol ? hol.type : '-'}</span></div>
+              </div>
+            `,
+            confirmButtonText: "ยืนยันลบวันหยุด",
+            onConfirm: doDelete
+          });
+        } else {
+          if (confirm(`ต้องการลบ "${name}" ใช่หรือไม่?`)) {
+            await doDelete();
           }
         }
       });

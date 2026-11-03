@@ -159,12 +159,128 @@
     if (window.lucide) window.lucide.createIcons();
   }
 
+  function checkAdminPin(entered) {
+    if (global.TeachData && typeof global.TeachData.verifyAdminPin === 'function') {
+      return global.TeachData.verifyAdminPin(entered);
+    }
+    const saved = localStorage.getItem('teach_admin_pin');
+    const correctPin = (!saved || saved === '0000') ? '1111' : saved;
+    return String(entered || '').trim() === correctPin;
+  }
+
+  function requestAdminPinConfirm({
+    title = "ยืนยันรหัสผ่านแอดมินก่อนลบ",
+    subtitle = "ระบบต้องการรหัสผ่านผู้ดูแลระบบ (Admin PIN) เพื่อยืนยันการลบข้อมูลและป้องกันการลบโดยไม่ได้ตั้งใจ",
+    detailHtml = "",
+    confirmButtonText = "ยืนยันลบข้อมูล",
+    onConfirm
+  } = {}) {
+    const pinModal = document.getElementById('admin-pin-confirm-modal');
+    const pinCard = document.getElementById('admin-pin-modal-card');
+    const pinTitle = document.getElementById('admin-pin-modal-title');
+    const pinSubtitle = document.getElementById('admin-pin-modal-subtitle');
+    const pinInput = document.getElementById('admin-pin-confirm-input');
+    const pinError = document.getElementById('admin-pin-confirm-error');
+    const pinDetail = document.getElementById('admin-pin-item-detail');
+    const btnCancel = document.getElementById('btn-cancel-admin-pin');
+    const btnSubmit = document.getElementById('btn-submit-admin-pin');
+    const submitLabel = document.getElementById('admin-pin-submit-label');
+
+    if (!pinModal || !pinInput) {
+      const entered = prompt(`[ยืนยันรหัสแอดมิน]\n${title}\nกรุณากรอกรหัสผ่านแอดมิน 4 หลัก:`);
+      if (entered && checkAdminPin(entered)) {
+        if (typeof onConfirm === 'function') onConfirm();
+      } else if (entered) {
+        alert("รหัสผ่านแอดมินไม่ถูกต้อง");
+      }
+      return;
+    }
+
+    if (pinTitle) pinTitle.innerText = title;
+    if (pinSubtitle) pinSubtitle.innerText = subtitle;
+    if (pinDetail) pinDetail.innerHTML = detailHtml || '';
+    if (submitLabel) submitLabel.innerText = confirmButtonText;
+    if (pinError) pinError.classList.add('hidden');
+    pinInput.value = '';
+
+    pinModal.classList.remove('hidden');
+    pinModal.classList.add('flex');
+    if (window.lucide) window.lucide.createIcons();
+
+    setTimeout(() => {
+      pinInput.focus();
+    }, 100);
+
+    const closeModal = () => {
+      pinModal.classList.add('hidden');
+      pinModal.classList.remove('flex');
+      pinInput.value = '';
+      if (pinError) pinError.classList.add('hidden');
+    };
+
+    btnCancel.onclick = closeModal;
+    pinModal.onclick = (e) => {
+      if (e.target === pinModal) closeModal();
+    };
+
+    let isSubmitting = false;
+    const doVerifyAndExecute = async () => {
+      if (isSubmitting) return;
+      const enteredPin = pinInput.value.trim();
+      if (checkAdminPin(enteredPin)) {
+        isSubmitting = true;
+        closeModal();
+        try {
+          if (typeof onConfirm === 'function') {
+            await onConfirm();
+          }
+        } catch (err) {
+          console.error("Delete execution error:", err);
+          alert("เกิดข้อผิดพลาดในการลบ: " + (err.message || err));
+        } finally {
+          isSubmitting = false;
+        }
+      } else {
+        if (pinError) pinError.classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+        if (pinCard) {
+          pinCard.classList.remove('animate-shake');
+          void pinCard.offsetWidth;
+          pinCard.classList.add('animate-shake');
+        }
+        pinInput.value = '';
+        pinInput.focus();
+      }
+    };
+
+    btnSubmit.onclick = doVerifyAndExecute;
+
+    pinInput.oninput = () => {
+      if (pinError) pinError.classList.add('hidden');
+      if (pinInput.value.length === 4) {
+        setTimeout(doVerifyAndExecute, 120);
+      }
+    };
+
+    pinInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        doVerifyAndExecute();
+      } else if (e.key === 'Escape') {
+        closeModal();
+      }
+    };
+  }
+
   // ส่งออก TeachApp ทันที เพื่อให้เรียกใช้ได้ตั้งแต่เริ่มต้น
   global.TeachApp = {
     switchTab,
     updateSchoolBrandingUI,
-    showToast
+    showToast,
+    requestAdminPinConfirm,
+    checkAdminPin
   };
+  global.requestAdminPinConfirm = requestAdminPinConfirm;
 
   document.addEventListener('DOMContentLoaded', () => {
     // ผูก listener ที่แถบเมนูเพียงจุดเดียว เพื่อไม่ให้คลิกแล้วสลับหน้าซ้ำ

@@ -40,6 +40,21 @@
   let currentDate = new Date();
   let datePickerDismissHandler = null;
   
+  function getGradeRank(gradeStr) {
+    if (!gradeStr) return 99;
+    const g = String(gradeStr).trim();
+    if (Array.isArray(GRADE_BANDS)) {
+      const idx = GRADE_BANDS.findIndex(b => b.key === g);
+      if (idx !== -1) return idx;
+    }
+    if (g.includes('อนุบาล')) return 0;
+    if (g.includes('ป.1-3') || g.includes('ป.1') || g.includes('ป.2') || g.includes('ป.3')) return 1;
+    if (g.includes('ป.4-6') || g.includes('ป.4') || g.includes('ป.5') || g.includes('ป.6')) return 2;
+    if (g.includes('ม.1-3') || g.includes('ม.1') || g.includes('ม.2') || g.includes('ม.3')) return 3;
+    if (g.includes('ม.4-6') || g.includes('ม.4') || g.includes('ม.5') || g.includes('ม.6')) return 4;
+    return 99;
+  }
+
   function toLocalISODate(d) {
     if (!d || !(d instanceof Date) || isNaN(d.getTime())) {
       d = new Date();
@@ -845,7 +860,8 @@
                           <option value="">-- เลือกครูสอนแทน --</option>
                           <optgroup label="ครูที่ว่างในคาบนี้ (ว่าง ${freeCount} ท่าน)">
                             ${availableTeachers.filter(t => t.isFree).map(t => {
-                              const g = gradesMap[t.name] ? ` [${gradesMap[t.name]}]` : '';
+                              const gradeName = (gradesMap && gradesMap[t.name]) || t.grade || '';
+                              const g = gradeName ? ` [${gradeName}]` : '';
                               return `
                                 <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
                                   ${t.name}${g} (ว่าง ${t.freePeriodsCount} คาบ)
@@ -855,7 +871,8 @@
                           </optgroup>
                           <optgroup label="ครูที่มีคาบสอนอื่น">
                             ${availableTeachers.filter(t => !t.isFree).map(t => {
-                              const g = gradesMap[t.name] ? ` [${gradesMap[t.name]}]` : '';
+                              const gradeName = (gradesMap && gradesMap[t.name]) || t.grade || '';
+                              const g = gradeName ? ` [${gradeName}]` : '';
                               return `
                                 <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
                                   ⚠️ ${t.name}${g} (${t.busyWith})
@@ -931,34 +948,69 @@
         if (!item) return;
 
         const dateStr = toLocalISODate(currentDate);
+        const thaiDateStr = formatThaiDate(currentDate).fullDate;
         const hasSavedRecords = (cachedSubstitutions || []).some(
           r => r.date === dateStr && r.absentTeacher === item.teacherName
         );
+        const periodsCount = Object.keys(item.periods || {}).length;
 
-        if (hasSavedRecords || item.isSaved) {
-          if (!confirm(`คุณครู ${item.teacherName} มีข้อมูลที่บันทึกไว้ ต้องการลบออกจากฐานข้อมูลและหน้าจัดสอนแทนใช่หรือไม่?`)) {
-            return;
-          }
+        const detailHtml = `
+          <div class="flex items-center gap-2 mb-2 font-bold text-slate-800 text-sm">
+            <i data-lucide="user-x" class="w-4 h-4 text-rose-500"></i>
+            <span>ต้องการลบคุณครู: <span class="text-rose-600 font-black">${item.teacherName}</span></span>
+          </div>
+          <div class="text-xs text-slate-600 space-y-1 bg-white p-2.5 rounded-xl border border-slate-200/80">
+            <div>• <b>ประเภทการลา:</b> <span class="font-bold text-indigo-700">${item.leaveType || 'ไปราชการ'}</span></div>
+            <div>• <b>วันที่:</b> <span class="font-bold text-slate-800">${thaiDateStr}</span></div>
+            <div>• <b>จำนวนคาบสอน:</b> <span class="font-bold text-slate-800">${periodsCount} คาบ</span></div>
+            ${(hasSavedRecords || item.isSaved) ? `
+              <div class="text-rose-600 font-semibold mt-1.5 pt-1.5 border-t border-rose-100 text-[11px] leading-relaxed">
+                ⚠️ มีข้อมูลบันทึกอยู่ในระบบ การลบจะลบประวัติการสอนแทนและสถิติการลาของวันนี้ออกอย่างถาวร
+              </div>
+            ` : `
+              <div class="text-slate-500 mt-1.5 pt-1.5 border-t border-slate-100 text-[11px]">
+                ℹ️ จะนำคุณครูท่านนี้ออกจากรายการจัดสอนแทนของวันนี้
+              </div>
+            `}
+          </div>
+        `;
 
-          if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsForTeacher) {
-            cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsForTeacher(dateStr, item.teacherName);
-          } else {
-            const toDelete = (cachedSubstitutions || []).filter(r => r.date === dateStr && r.absentTeacher === item.teacherName);
-            if (toDelete.length > 0) {
-              const ids = toDelete.map(r => r.id).filter(Boolean);
-              if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsBatch) {
-                cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsBatch(ids);
+        const executeDelete = async () => {
+          if (hasSavedRecords || item.isSaved) {
+            if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsForTeacher) {
+              cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsForTeacher(dateStr, item.teacherName);
+            } else {
+              const toDelete = (cachedSubstitutions || []).filter(r => r.date === dateStr && r.absentTeacher === item.teacherName);
+              if (toDelete.length > 0) {
+                const ids = toDelete.map(r => r.id).filter(Boolean);
+                if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsBatch) {
+                  cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsBatch(ids);
+                }
               }
             }
           }
+
+          absentTeachersList.splice(idx, 1);
+          renderAbsentTeachersCards();
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast(`ลบรายการคุณครู ${item.teacherName} เรียบร้อยแล้ว`, "success");
+          }
+        };
+
+        const confirmFn = (global.TeachApp && global.TeachApp.requestAdminPinConfirm) || global.requestAdminPinConfirm;
+        if (confirmFn) {
+          confirmFn({
+            title: `ยืนยันลบรายการคุณครู ${item.teacherName}`,
+            subtitle: "กรุณากรอกรหัสแอดมิน 4 หลัก เพื่อยืนยันการลบรายการและป้องกันการกดโดน",
+            detailHtml,
+            confirmButtonText: "ยืนยันลบข้อมูล",
+            onConfirm: executeDelete
+          });
         } else {
-          if (!confirm(`ต้องการนำคุณครู ${item.teacherName} ออกจากรายการจัดสอนแทนใช่หรือไม่?`)) {
-            return;
+          if (confirm(`คุณครู ${item.teacherName} ต้องการลบใช่หรือไม่?`)) {
+            await executeDelete();
           }
         }
-
-        absentTeachersList.splice(idx, 1);
-        renderAbsentTeachersCards();
       });
     });
 
@@ -1048,20 +1100,32 @@
           }
         });
 
+        const grade = (cachedTeacherGrades && cachedTeacherGrades[name]) || 'ป.1-3';
+
         return {
           name,
+          grade,
           isFree,
           busyWith,
           freePeriodsCount
         };
       })
       .sort((a, b) => {
+        // 1. แยกกลุ่มว่างกับไม่ว่าง (ครูที่ว่างในคาบนี้ขึ้นก่อน)
         if (a.isFree && !b.isFree) return -1;
         if (!a.isFree && b.isFree) return 1;
-        // เรียงคนที่ว่างหลายคาบที่สุดขึ้นก่อน
+
+        // 2. เรียงตามระดับชั้น: อนุบาล -> ป.1-3 -> ป.4-6 -> ม.1-3 -> ม.4-6
+        const rankA = getGradeRank(a.grade);
+        const rankB = getGradeRank(b.grade);
+        if (rankA !== rankB) return rankA - rankB;
+
+        // 3. ภายในช่วงชั้นเดียวกัน เรียงคนที่คาบว่างเยอะสุดไว้บน
         if (b.freePeriodsCount !== a.freePeriodsCount) {
           return b.freePeriodsCount - a.freePeriodsCount;
         }
+
+        // 4. กรณีคาบว่างเท่ากัน เรียงตามตัวอักษรไทย
         return a.name.localeCompare(b.name, 'th');
       });
   }
@@ -1272,13 +1336,16 @@
         }
       }
 
+      const rawLogoH = Number(settings.logoHeight);
+      const docLogoHeight = (rawLogoH && rawLogoH >= 80 && rawLogoH !== 150) ? rawLogoH : 120;
+
       return `
         <div class="a4-page-preview flex flex-col ${pageTeachers.length === 1 ? 'single-teacher-page' : 'justify-between'}" id="doc-page-${pageIdx + 1}">
           
           <div>
             ${settings.logoUrl ? `
-              <div class="text-center mb-1.5">
-                <img src="${settings.logoUrl}" alt="ตราสัญลักษณ์โรงเรียน" style="height: ${settings.logoHeight || 80}px; max-width: 180px;" class="object-contain mx-auto">
+              <div class="text-center mb-2">
+                <img src="${settings.logoUrl}" alt="ตราสัญลักษณ์โรงเรียน" style="height: ${docLogoHeight}px; max-width: 260px;" class="object-contain mx-auto">
               </div>
             ` : ''}
             <div class="text-center">
@@ -1299,11 +1366,11 @@
             <div class="text-[14.5px] mt-2.5 leading-[1.5] space-y-1">
               <div class="flex items-baseline">
                 <span class="w-16 font-bold shrink-0">เรื่อง</span>
-                <span class="doc-subject-text outline-none hover:bg-amber-50 focus:bg-amber-50 rounded px-1 transition-colors" contenteditable="true" title="คลิกเพื่อพิมพ์แก้ไขข้อความหัวข้อเรื่องได้โดยตรง">${pageDocSubject}</span>
+                <span class="doc-subject-text flex-1 outline-none hover:bg-amber-50/70 focus:bg-amber-50/70 rounded transition-colors" contenteditable="true" title="คลิกเพื่อพิมพ์แก้ไขข้อความหัวข้อเรื่องได้โดยตรง">${pageDocSubject}</span>
               </div>
-              <div class="flex">
-                <span class="w-16 font-bold">เรียน</span>
-                <span>${settings.docDear}</span>
+              <div class="flex items-baseline">
+                <span class="w-16 font-bold shrink-0">เรียน</span>
+                <span class="flex-1">${settings.docDear}</span>
               </div>
             </div>
 
