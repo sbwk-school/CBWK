@@ -8,6 +8,8 @@
     saveSchoolSettings, 
     getPeriods, 
     savePeriods, 
+    getAcademicCalendar,
+    saveAcademicCalendar,
     getTeachers, 
     saveTeachers, 
     getTeacherGrades,
@@ -15,6 +17,7 @@
     getAllTimetables, 
     saveDayTimetable, 
     saveAllTimetables,
+    getSubstitutions,
     getFirebaseConfig, 
     parseConfigInput, 
     saveFirebaseConfig, 
@@ -25,6 +28,7 @@
 
   const {
     GRADE_BANDS = [
+      { key: "อนุบาล", label: "อนุบาล (ส้มพาสเทล)", colorName: "ส้ม", color: "amber", cellBg: "bg-amber-50", rowHover: "hover:bg-amber-100/80", badgeClass: "bg-amber-200/90 text-amber-950 border-amber-300", borderClass: "border-l-amber-500", dotClass: "bg-amber-500", textClass: "text-amber-950" },
       { key: "ป.1-3", label: "ป.1-3 (เขียวพาสเทล)", colorName: "เขียว", color: "emerald", cellBg: "bg-emerald-50", rowHover: "hover:bg-emerald-100/80", badgeClass: "bg-emerald-200/90 text-emerald-950 border-emerald-300", borderClass: "border-l-emerald-500", dotClass: "bg-emerald-500", textClass: "text-emerald-950" },
       { key: "ป.4-6", label: "ป.4-6 (แดงพาสเทล)", colorName: "แดง", color: "rose", cellBg: "bg-rose-50", rowHover: "hover:bg-rose-100/80", badgeClass: "bg-rose-200/90 text-rose-950 border-rose-300", borderClass: "border-l-rose-500", dotClass: "bg-rose-500", textClass: "text-rose-950" },
       { key: "ม.1-3", label: "ม.1-3 (ฟ้าพาสเทล)", colorName: "ฟ้า", color: "sky", cellBg: "bg-sky-50", rowHover: "hover:bg-sky-100/80", badgeClass: "bg-sky-200/90 text-sky-950 border-sky-300", borderClass: "border-l-sky-500", dotClass: "bg-sky-500", textClass: "text-sky-950" },
@@ -37,7 +41,8 @@
       "พฤหัสบดี": { name: "วันพฤหัสบดี", colorName: "ส้ม", activeClass: "bg-orange-200 text-orange-950 border-orange-400 shadow-xs ring-2 ring-orange-400/50 font-black", inactiveClass: "bg-orange-50/80 text-orange-900 border-orange-200/80 hover:bg-orange-100 hover:border-orange-300", dotClass: "bg-orange-500", badgeClass: "bg-orange-100 text-orange-900 border-orange-300" },
       "ศุกร์": { name: "วันศุกร์", colorName: "ฟ้า", activeClass: "bg-sky-200 text-sky-950 border-sky-400 shadow-xs ring-2 ring-sky-400/50 font-black", inactiveClass: "bg-sky-50/80 text-sky-900 border-sky-200/80 hover:bg-sky-100 hover:border-sky-300", dotClass: "bg-sky-500", badgeClass: "bg-sky-100 text-sky-900 border-sky-300" }
     },
-    DEFAULT_TEACHER_GRADES = {}
+    DEFAULT_TEACHER_GRADES = {},
+    DEFAULT_ACADEMIC_CALENDAR = {}
   } = global.TeachData || {};
 
   const ADMIN_PIN_KEY = 'teach_admin_pin';
@@ -46,11 +51,19 @@
   let isUnlocked = false;
   let activeAdminTab = 'school';
   let selectedDay = 'จันทร์';
+  let isSheetEditMode = false;
+  let originalTimetablesSnapshot = null;
+  let originalTeachersSnapshot = null;
   let activeTimetables = {};
   let activeTeachers = [];
   let activePeriods = [];
   let activeSettings = {};
   let activeTeacherGrades = {};
+  let activeCalendar = null;
+  let activeSubstitutions = [];
+  let calendarTeacherGradeFilter = 'ALL';
+  let calendarTeacherSearch = '';
+  let calendarSortOrder = 'default';
   let teacherFilterGrade = 'ALL';
   let teacherSearchQuery = '';
   let sheetFilterGrade = 'ALL';
@@ -275,6 +288,20 @@
     } else {
       activeTeacherGrades = { ...DEFAULT_TEACHER_GRADES };
     }
+    if (getAcademicCalendar) {
+      activeCalendar = (await getAcademicCalendar()) || { ...DEFAULT_ACADEMIC_CALENDAR };
+    } else {
+      activeCalendar = { ...DEFAULT_ACADEMIC_CALENDAR };
+    }
+    if (!activeCalendar.holidays) activeCalendar.holidays = [];
+    if (getSubstitutions) {
+      try {
+        activeSubstitutions = (await getSubstitutions()) || [];
+      } catch (e) {
+        console.warn("Failed to load substitutions in admin:", e);
+        activeSubstitutions = [];
+      }
+    }
   }
 
   function renderAdminDashboard() {
@@ -340,6 +367,18 @@
             <i data-lucide="sheet" class="w-4 h-4 inline mr-1.5 text-indigo-500"></i>
             <span>ตารางสอน</span>
           </button>
+          <button class="admin-tab-btn btn-press px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${activeAdminTab === 'calendar' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}"
+            data-tab="calendar">
+            <i data-lucide="calendar-days" class="w-4 h-4 inline mr-1.5 text-emerald-500"></i>
+            <span class="admin-tab-label-wide hidden sm:inline">ปฏิทินภาคเรียน & วันหยุด</span>
+            <span class="admin-tab-label-mobile sm:hidden">ปฏิทินเทอม</span>
+          </button>
+          <button class="admin-tab-btn btn-press px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${activeAdminTab === 'teaching-load' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/80' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'}"
+            data-tab="teaching-load">
+            <i data-lucide="calculator" class="w-4 h-4 inline mr-1.5 text-indigo-500"></i>
+            <span class="admin-tab-label-wide hidden sm:inline">คำนวณคาบสอนจริง</span>
+            <span class="admin-tab-label-mobile sm:hidden">ภาระงานสอน</span>
+          </button>
         </div>
 
         <div id="admin-tab-content">
@@ -376,6 +415,10 @@
       renderPeriodsTab(contentArea);
     } else if (activeAdminTab === 'sheet') {
       renderSpreadsheetTab(contentArea);
+    } else if (activeAdminTab === 'calendar') {
+      renderCalendarTab(contentArea);
+    } else if (activeAdminTab === 'teaching-load') {
+      renderTeachingLoadTab(contentArea);
     } else {
       renderSchoolTab(contentArea);
     }
@@ -526,6 +569,7 @@
   }
 
   function analyzeGradeBandFromSubjects(subs, fallbackGrade) {
+    let scoreK = 0;
     let scoreP13 = 0;
     let scoreP46 = 0;
     let scoreM13 = 0;
@@ -533,14 +577,16 @@
 
     (subs || []).forEach(s => {
       if (!s) return;
+      if (/อ\s*[.\-]?\s*[1-3]|อนุบาล|ปฐมวัย/i.test(s)) scoreK += 2;
       if (/ป\s*[.\-]?\s*[1-3]/i.test(s)) scoreP13 += 2;
       if (/ป\s*[.\-]?\s*[4-6]/i.test(s)) scoreP46 += 2;
       if (/ม\s*[.\-]?\s*[1-3]/i.test(s)) scoreM13 += 2;
       if (/ม\s*[.\-]?\s*[4-6]/i.test(s)) scoreM46 += 2;
     });
 
-    const max = Math.max(scoreP13, scoreP46, scoreM13, scoreM46);
+    const max = Math.max(scoreK, scoreP13, scoreP46, scoreM13, scoreM46);
     if (max > 0) {
+      if (max === scoreK) return "อนุบาล";
       if (max === scoreP13) return "ป.1-3";
       if (max === scoreP46) return "ป.4-6";
       if (max === scoreM13) return "ม.1-3";
@@ -665,7 +711,7 @@
     }
 
     const analyzedGrades = {};
-    const gradeCounts = { "ป.1-3": 0, "ป.4-6": 0, "ม.1-3": 0, "ม.4-6": 0 };
+    const gradeCounts = { "อนุบาล": 0, "ป.1-3": 0, "ป.4-6": 0, "ม.1-3": 0, "ม.4-6": 0 };
 
     detectedTeachers.forEach(tName => {
       const subs = teacherSubjects[tName] || [];
@@ -821,9 +867,11 @@
                 <span>ช่วงชั้นที่จำแนกได้</span>
               </div>
               <div class="text-xs font-bold text-slate-700 mt-1 space-y-0.5">
+                <span class="text-amber-700 font-bold">อนุบาล (${analysisResult.gradeCounts['อนุบาล'] || 0})</span> • 
                 <span class="text-emerald-700 font-bold">ป.1-3 (${analysisResult.gradeCounts['ป.1-3'] || 0})</span> • 
                 <span class="text-rose-700 font-bold">ป.4-6 (${analysisResult.gradeCounts['ป.4-6'] || 0})</span><br/>
-                <span class="text-sky-700 font-bold">ม.1-3 (${analysisResult.gradeCounts['ม.1-3'] || 0})</span>
+                <span class="text-sky-700 font-bold">ม.1-3 (${analysisResult.gradeCounts['ม.1-3'] || 0})</span> • 
+                <span class="text-purple-700 font-bold">ม.4-6 (${analysisResult.gradeCounts['ม.4-6'] || 0})</span>
               </div>
             </div>
           </div>
@@ -996,10 +1044,36 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
+            ${isSheetEditMode ? `
+              <!-- ปุ่มบันทึกข้อมูล (โหมดแก้ไข: เด่นชัด สีเขียวมรกต) -->
+              <button id="btn-save-all-data" 
+                class="btn-press hover-lift-sm px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-500/25 transition-all flex items-center gap-1.5 cursor-pointer ring-2 ring-emerald-400"
+                title="บันทึกข้อมูลตารางสอน รายชื่อครู และช่วงชั้นทั้งหมดลงระบบและคลาวด์ Firebase">
+                <i data-lucide="save" class="w-4 h-4"></i>
+                <span>บันทึกข้อมูล</span>
+              </button>
+
+              <!-- ปุ่มยกเลิกการแก้ไข -->
+              <button id="btn-cancel-edit-sheet" 
+                class="btn-press hover-lift-sm px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="ยกเลิกการแก้ไขและคืนค่าเดิมก่อนหน้า">
+                <i data-lucide="x" class="w-4 h-4"></i>
+                <span>ยกเลิก</span>
+              </button>
+            ` : `
+              <!-- ปุ่มเข้าสู่โหมดแก้ไขตารางสอน -->
+              <button id="btn-toggle-edit-sheet" 
+                class="btn-press hover-lift-sm px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                title="เปิดโหมดแก้ไขตารางสอน เพื่อคลิกพิมพ์แก้ข้อมูลในช่องได้เหมือน Excel">
+                <i data-lucide="edit-3" class="w-4 h-4"></i>
+                <span>แก้ไขตารางสอน</span>
+              </button>
+            `}
+
             <button id="btn-add-teacher-row" 
               class="btn-press hover-lift-sm px-3 py-1.5 bg-white hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 text-xs font-bold rounded-xl border border-slate-200/80 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs">
               <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
-              เพิ่มคุณครู
+              <span>เพิ่มคุณครู</span>
             </button>
 
             <!-- 1. ปุ่มดาวน์โหลด Excel -->
@@ -1018,14 +1092,6 @@
               <span>อัปโหลด Excel</span>
             </button>
             <input type="file" id="input-upload-excel" accept=".xlsx, .xls" class="hidden" />
-
-            <!-- 2. ปุ่มบันทึกข้อมูล (แทนที่ส่งข้อมูลเดิมตามที่ขอ) -->
-            <button id="btn-save-all-data" 
-              class="btn-press hover-lift-sm px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
-              title="บันทึกข้อมูลตารางสอน รายชื่อครู และช่วงชั้นทั้งหมดลงระบบและคลาวด์ Firebase">
-              <i data-lucide="save" class="w-4 h-4"></i>
-              <span>บันทึกข้อมูล</span>
-            </button>
           </div>
         </div>
 
@@ -1058,16 +1124,31 @@
           }).join('')}
         </div>
 
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-indigo-800 bg-indigo-50/70 p-3 rounded-xl border border-indigo-100">
-          <div class="flex items-center gap-2">
-            <i data-lucide="info" class="w-4 h-4 text-indigo-600 shrink-0"></i>
-            <span>กำลังแสดงตารางสอน<strong>วัน${selectedDay}</strong> — สามารถแก้ไขในช่องตาราง หรือกดปุ่ม <strong>"อัปโหลด Excel"</strong> เพื่อวิเคราะห์ไฟล์ แล้วกด <strong>"บันทึกข้อมูล"</strong></span>
+        ${isSheetEditMode ? `
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-950 bg-amber-50/90 p-3 rounded-xl border-2 border-amber-300 shadow-2xs animate-in fade-in">
+            <div class="flex items-center gap-2">
+              <span class="p-1.5 bg-amber-200 text-amber-900 rounded-lg shrink-0">
+                <i data-lucide="edit-3" class="w-4 h-4"></i>
+              </span>
+              <span><strong>โหมดแก้ไขตารางสอนเปิดอยู่:</strong> คลิกพิมพ์แก้ไขวิชา/ห้องในแต่ละช่องได้เหมือน Excel เมื่อแก้ไขเสร็จแล้วกด <strong>"บันทึกข้อมูล"</strong></span>
+            </div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black bg-amber-200 text-amber-950 border border-amber-400 self-start sm:self-auto shadow-2xs">
+              <span class="w-2 h-2 rounded-full bg-amber-600 animate-pulse"></span>
+              <span>กำลังแก้ไขวัน${selectedDay}</span>
+            </span>
           </div>
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black border ${currentDayConfig.badgeClass} self-start sm:self-auto shadow-2xs">
-            <span class="w-2 h-2 rounded-full ${currentDayConfig.dotClass}"></span>
-            <span>วัน${selectedDay} (${currentDayConfig.colorName})</span>
-          </span>
-        </div>
+        ` : `
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-indigo-800 bg-indigo-50/70 p-3 rounded-xl border border-indigo-100">
+            <div class="flex items-center gap-2">
+              <i data-lucide="info" class="w-4 h-4 text-indigo-600 shrink-0"></i>
+              <span>กำลังแสดงตารางสอน<strong>วัน${selectedDay}</strong> — กดปุ่ม <strong>"แก้ไขตารางสอน"</strong> หรือคลิกที่ช่องตารางเพื่อแก้ไขข้อมูลเหมือน Excel</span>
+            </div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black border ${currentDayConfig.badgeClass} self-start sm:self-auto shadow-2xs">
+              <span class="w-2 h-2 rounded-full ${currentDayConfig.dotClass}"></span>
+              <span>วัน${selectedDay} (${currentDayConfig.colorName})</span>
+            </span>
+          </div>
+        `}
 
         <div class="sheet-scroll overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-2xs">
           <table class="sheet-table w-full text-xs">
@@ -1105,19 +1186,33 @@
                         <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black border ${band.badgeClass} shrink-0 select-none shadow-2xs" title="ช่วงชั้น: ${band.label}">
                           ${band.key}
                         </span>
-                        <input type="text" value="${teacherName}" 
-                          class="teacher-name-input sheet-cell-input font-bold text-slate-800 bg-transparent hover:bg-white/40 focus:bg-white transition-all"
-                          data-index="${tIdx}" data-oldname="${teacherName}">
+                        ${isSheetEditMode ? `
+                          <input type="text" value="${teacherName}" 
+                            class="teacher-name-input sheet-cell-edit-input flex-1 py-1 px-2 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg shadow-2xs focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
+                            data-index="${tIdx}" data-oldname="${teacherName}">
+                        ` : `
+                          <span class="view-mode-cell font-bold text-slate-800 py-1 px-1.5 cursor-pointer hover:text-indigo-600 transition-colors"
+                            data-tindex="${tIdx}" data-type="teacher" title="คลิกเพื่อแก้ไขตารางสอน">
+                            ${teacherName}
+                          </span>
+                        `}
                       </div>
                     </td>
                     ${activePeriods.map((period, pIdx) => {
                       const val = teacherRow[pIdx] || "";
                       return `
-                        <td class="p-0 ${period.isBreak ? 'bg-amber-100/50' : band.cellBg}">
-                          <input type="text" value="${val}" 
-                            placeholder="${period.isBreak ? 'พักกลางวัน' : '-'}" 
-                            class="grid-cell-input sheet-cell-input text-center text-slate-800 font-semibold bg-transparent hover:bg-white/40 focus:bg-white transition-all"
-                            data-tindex="${tIdx}" data-pindex="${pIdx}">
+                        <td class="p-1 ${period.isBreak ? 'bg-amber-100/50' : band.cellBg}">
+                          ${isSheetEditMode ? `
+                            <input type="text" value="${val}" 
+                              placeholder="${period.isBreak ? 'พักกลางวัน' : '-'}" 
+                              class="grid-cell-input sheet-cell-edit-input w-full py-1.5 px-2 text-center text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg shadow-2xs hover:border-indigo-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
+                              data-tindex="${tIdx}" data-pindex="${pIdx}">
+                          ` : `
+                            <div class="view-mode-cell py-1.5 px-2 text-center text-xs font-semibold text-slate-800 cursor-pointer hover:bg-white/80 hover:text-indigo-700 transition-all select-none rounded-lg"
+                              data-tindex="${tIdx}" data-pindex="${pIdx}" title="คลิกเพื่อแก้ไขตารางสอน">
+                              ${val ? val : (period.isBreak ? '<span class="text-amber-800/60 font-medium">พักกลางวัน</span>' : '<span class="text-slate-400 font-normal">-</span>')}
+                            </div>
+                          `}
                         </td>
                       `;
                     }).join('')}
@@ -1137,8 +1232,73 @@
       </div>
     `;
 
+    // Toggle Edit Mode Button
+    const btnToggleEdit = document.getElementById('btn-toggle-edit-sheet');
+    if (btnToggleEdit) {
+      btnToggleEdit.addEventListener('click', () => {
+        isSheetEditMode = true;
+        originalTimetablesSnapshot = JSON.parse(JSON.stringify(activeTimetables));
+        originalTeachersSnapshot = [...activeTeachers];
+        renderSpreadsheetTab(container);
+      });
+    }
+
+    // Cancel Edit Mode Button
+    const btnCancelEdit = document.getElementById('btn-cancel-edit-sheet');
+    if (btnCancelEdit) {
+      btnCancelEdit.addEventListener('click', () => {
+        if (originalTimetablesSnapshot) {
+          activeTimetables = JSON.parse(JSON.stringify(originalTimetablesSnapshot));
+        }
+        if (originalTeachersSnapshot) {
+          activeTeachers = [...originalTeachersSnapshot];
+        }
+        isSheetEditMode = false;
+        renderSpreadsheetTab(container);
+        if (global.TeachApp && global.TeachApp.showToast) {
+          global.TeachApp.showToast("ยกเลิกการแก้ไขตารางสอนแล้ว", "info");
+        }
+      });
+    }
+
+    // Click cell in View Mode to quickly enter Edit Mode and focus that cell
+    if (!isSheetEditMode) {
+      container.querySelectorAll('.view-mode-cell').forEach(cell => {
+        cell.addEventListener('click', () => {
+          const tIdx = cell.dataset.tindex;
+          const pIdx = cell.dataset.pindex;
+          const isTeacher = cell.dataset.type === 'teacher';
+          isSheetEditMode = true;
+          originalTimetablesSnapshot = JSON.parse(JSON.stringify(activeTimetables));
+          originalTeachersSnapshot = [...activeTeachers];
+          renderSpreadsheetTab(container);
+          setTimeout(() => {
+            const input = isTeacher
+              ? container.querySelector(`.teacher-name-input[data-index="${tIdx}"]`)
+              : container.querySelector(`.grid-cell-input[data-tindex="${tIdx}"][data-pindex="${pIdx}"]`);
+            if (input) {
+              input.focus();
+              input.select();
+            }
+          }, 60);
+        });
+      });
+    }
+
     container.querySelectorAll('.sheet-day-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        if (isSheetEditMode) {
+          // Collect latest values before switching days
+          container.querySelectorAll('.grid-cell-input').forEach(input => {
+            const tIdx = parseInt(input.dataset.tindex);
+            const pIdx = parseInt(input.dataset.pindex);
+            if (!isNaN(tIdx) && !isNaN(pIdx)) {
+              if (!activeTimetables[selectedDay]) activeTimetables[selectedDay] = [];
+              if (!activeTimetables[selectedDay][tIdx]) activeTimetables[selectedDay][tIdx] = ["", "", "", "", "", "", ""];
+              activeTimetables[selectedDay][tIdx][pIdx] = input.value;
+            }
+          });
+        }
         selectedDay = e.currentTarget.dataset.day;
         renderSpreadsheetTab(container);
       });
@@ -1146,6 +1306,17 @@
 
     container.querySelectorAll('.sheet-grade-filter-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        if (isSheetEditMode) {
+          container.querySelectorAll('.grid-cell-input').forEach(input => {
+            const tIdx = parseInt(input.dataset.tindex);
+            const pIdx = parseInt(input.dataset.pindex);
+            if (!isNaN(tIdx) && !isNaN(pIdx)) {
+              if (!activeTimetables[selectedDay]) activeTimetables[selectedDay] = [];
+              if (!activeTimetables[selectedDay][tIdx]) activeTimetables[selectedDay][tIdx] = ["", "", "", "", "", "", ""];
+              activeTimetables[selectedDay][tIdx][pIdx] = input.value;
+            }
+          });
+        }
         sheetFilterGrade = e.currentTarget.dataset.grade;
         renderSpreadsheetTab(container);
       });
@@ -1245,6 +1416,19 @@
     const btnSaveAllData = document.getElementById('btn-save-all-data');
     if (btnSaveAllData) {
       btnSaveAllData.addEventListener('click', async () => {
+        // Collect latest teacher names from table
+        container.querySelectorAll('.teacher-name-input').forEach(input => {
+          const idx = parseInt(input.dataset.index);
+          const oldName = input.dataset.oldname;
+          const newName = input.value.trim();
+          if (!isNaN(idx) && newName && newName !== oldName) {
+            activeTeacherGrades[newName] = activeTeacherGrades[oldName] || "ป.1-3";
+            delete activeTeacherGrades[oldName];
+            activeTeachers[idx] = newName;
+            input.dataset.oldname = newName;
+          }
+        });
+
         // Collect latest cell inputs from table before saving
         container.querySelectorAll('.grid-cell-input').forEach(input => {
           const tIdx = parseInt(input.dataset.tindex);
@@ -1271,17 +1455,14 @@
             await saveDayTimetable(selectedDay, activeTimetables[selectedDay], activeTeachers);
           }
           
-          btnSaveAllData.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>บันทึกสำเร็จ!</span>`;
-          if (window.lucide) window.lucide.createIcons();
-          if (global.TeachApp && global.TeachApp.showToast) {
-            global.TeachApp.showToast("บันทึกข้อมูลตารางสอน รายชื่อครู และช่วงชั้นเรียบร้อยแล้ว", "success");
-          }
+          isSheetEditMode = false;
+          originalTimetablesSnapshot = null;
+          originalTeachersSnapshot = null;
+          renderSpreadsheetTab(container);
 
-          setTimeout(() => {
-            btnSaveAllData.disabled = false;
-            btnSaveAllData.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i><span>บันทึกข้อมูล</span>`;
-            if (window.lucide) window.lucide.createIcons();
-          }, 2400);
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast("บันทึกข้อมูลตารางสอนเรียบร้อยแล้ว", "success");
+          }
         } catch (e) {
           btnSaveAllData.disabled = false;
           btnSaveAllData.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i><span>บันทึกข้อมูล</span>`;
@@ -1586,7 +1767,7 @@
                 </span>
               </h3>
               <p class="text-xs text-slate-500 mt-0.5">
-                กำหนดช่วงชั้น (ป.1-3, ป.4-6, ม.1-3, ม.4-6) เพื่อเติมแถบสีแยกกลุ่มในหน้า <strong>ตารางสอน</strong> อัตโนมัติ
+                กำหนดช่วงชั้น (อนุบาล, ป.1-3, ป.4-6, ม.1-3, ม.4-6) เพื่อเติมแถบสีแยกกลุ่มในหน้า <strong>ตารางสอน</strong> อัตโนมัติ
               </p>
             </div>
 
@@ -2395,6 +2576,7 @@
           setTimeout(() => {
             saveBtns.forEach((b, idx) => {
               b.disabled = false;
+              b.className = "btn-save-school-action btn-press hover-lift-sm px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-emerald-500/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0";
               b.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i><span>${idx === 0 ? 'บันทึกข้อมูล' : 'บันทึกข้อมูลโรงเรียน'}</span>`;
             });
             if (window.lucide) window.lucide.createIcons();
@@ -2402,6 +2584,7 @@
         } catch (e) {
           saveBtns.forEach((b, idx) => {
             b.disabled = false;
+            b.className = "btn-save-school-action btn-press hover-lift-sm px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-emerald-500/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0";
             b.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i><span>${idx === 0 ? 'บันทึกข้อมูล' : 'บันทึกข้อมูลโรงเรียน'}</span>`;
           });
           if (window.lucide) window.lucide.createIcons();
@@ -2412,7 +2595,1328 @@
       });
     });
 
+    // Dirty state tracker for School Settings
+    const schoolInputs = [
+      'cfg-school-name', 'cfg-subdistrict', 'cfg-district', 'cfg-province', 'cfg-postal',
+      'cfg-academic-rank', 'cfg-academic-head', 'cfg-academic-pos',
+      'cfg-director-rank', 'cfg-director-name', 'cfg-director-pos',
+      'cfg-doc-subject', 'cfg-doc-dear', 'cfg-new-pin'
+    ];
+
+    const updateSchoolDirtyUI = () => {
+      const s = activeSettings || {};
+      let isDirty = false;
+
+      const checkField = (id, origVal) => {
+        const el = document.getElementById(id);
+        if (!el) return false;
+        const cur = el.value.trim();
+        const orig = String(origVal || '').trim();
+        const changed = cur !== orig;
+        if (changed) {
+          el.classList.add('border-amber-400', 'ring-2', 'ring-amber-200/70', 'bg-amber-50/20');
+          el.classList.remove('border-slate-200');
+        } else {
+          el.classList.remove('border-amber-400', 'ring-2', 'ring-amber-200/70', 'bg-amber-50/20');
+          el.classList.add('border-slate-200');
+        }
+        return changed;
+      };
+
+      if (checkField('cfg-school-name', s.schoolName)) isDirty = true;
+      if (checkField('cfg-subdistrict', s.subdistrict)) isDirty = true;
+      if (checkField('cfg-district', s.district)) isDirty = true;
+      if (checkField('cfg-province', s.province)) isDirty = true;
+      if (checkField('cfg-postal', s.postalCode)) isDirty = true;
+      if (checkField('cfg-academic-rank', s.academicHeadRank || 'ลงชื่อ')) isDirty = true;
+      if (checkField('cfg-academic-head', s.academicHeadName)) isDirty = true;
+      if (checkField('cfg-academic-pos', s.academicHeadPosition)) isDirty = true;
+      if (checkField('cfg-director-rank', s.directorRank)) isDirty = true;
+      if (checkField('cfg-director-name', s.directorName)) isDirty = true;
+      if (checkField('cfg-director-pos', s.directorPosition)) isDirty = true;
+      if (checkField('cfg-doc-subject', s.docSubject)) isDirty = true;
+      if (checkField('cfg-doc-dear', s.docDear)) isDirty = true;
+      const pinEl = document.getElementById('cfg-new-pin');
+      if (pinEl && pinEl.value.trim()) isDirty = true;
+
+      const saveBtns = container.querySelectorAll('.btn-save-school-action');
+      saveBtns.forEach((b, idx) => {
+        if (isDirty) {
+          b.className = "btn-save-school-action btn-press px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-black rounded-xl shadow-md shadow-orange-500/30 ring-2 ring-amber-300 transition-all flex items-center gap-1.5 cursor-pointer animate-pulse shrink-0";
+          b.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4 text-white"></i><span>⚠️ ยังไม่ได้บันทึก — กดบันทึกข้อมูล</span>`;
+        } else {
+          b.className = "btn-save-school-action btn-press hover-lift-sm px-4 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-emerald-500/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0";
+          b.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i><span>${idx === 0 ? 'บันทึกข้อมูล' : 'บันทึกข้อมูลโรงเรียน'}</span>`;
+        }
+      });
+
+      if (window.lucide) window.lucide.createIcons();
+    };
+
+    schoolInputs.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('input', updateSchoolDirtyUI);
+        el.addEventListener('change', updateSchoolDirtyUI);
+      }
+    });
+
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  // =============================================================
+  // Academic Calendar & Semester Teaching Load Calculator
+  // =============================================================
+
+  function formatHolidayDateDisplay(dateStr) {
+    if (!dateStr) return { text: "-", dayName: "-", isWeekday: false };
+    const parts = String(dateStr).split('-');
+    if (parts.length !== 3) return { text: dateStr, dayName: "-", isWeekday: false };
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return { text: dateStr, dayName: "-", isWeekday: false };
+
+    const thaiShortMonths = [
+      "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+      "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
+    ];
+    const thaiDays = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+    const dayOfWeek = thaiDays[d.getDay()];
+    const isWeekday = d.getDay() >= 1 && d.getDay() <= 5;
+    const text = `${d.getDate()} ${thaiShortMonths[d.getMonth()]} ${d.getFullYear() + 543}`;
+    return { text, dayName: dayOfWeek, isWeekday };
+  }
+
+  function computeCalendarStats(calData) {
+    const cal = calData || activeCalendar || DEFAULT_ACADEMIC_CALENDAR;
+    const startDateStr = cal.startDate || '2026-05-16';
+    const endDateStr = cal.endDate || '2026-10-10';
+
+    const dayNameMap = {
+      1: "จันทร์",
+      2: "อังคาร",
+      3: "พุธ",
+      4: "พฤหัสบดี",
+      5: "ศุกร์"
+    };
+
+    const dayCounts = {
+      "จันทร์": 0,
+      "อังคาร": 0,
+      "พุธ": 0,
+      "พฤหัสบดี": 0,
+      "ศุกร์": 0
+    };
+
+    const holidays = Array.isArray(cal.holidays) ? cal.holidays : [];
+    const holidayDateMap = new Map();
+    holidays.forEach(h => {
+      if (h && h.date) holidayDateMap.set(h.date, h);
+    });
+
+    const start = new Date(startDateStr + 'T00:00:00');
+    const end = new Date(endDateStr + 'T00:00:00');
+
+    let totalDays = 0;
+    let teachingDays = 0;
+    let weekdayHolidaysCount = 0;
+    let totalHolidaysInRange = 0;
+
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && start <= end) {
+      const cur = new Date(start.getTime());
+      while (cur <= end) {
+        totalDays++;
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, '0');
+        const d = String(cur.getDate()).padStart(2, '0');
+        const dateKey = `${y}-${m}-${d}`;
+        const dayOfWeek = cur.getDay();
+
+        const isHoliday = holidayDateMap.has(dateKey);
+
+        if (isHoliday) {
+          totalHolidaysInRange++;
+          if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+            weekdayHolidaysCount++;
+          }
+        } else {
+          if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+            teachingDays++;
+            const dayName = dayNameMap[dayOfWeek];
+            if (dayName) {
+              dayCounts[dayName] = (dayCounts[dayName] || 0) + 1;
+            }
+          }
+        }
+
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+
+    const weeks = Math.floor(totalDays / 7);
+    const remDays = totalDays % 7;
+    const weeksDisplay = remDays > 0 ? `${weeks} สัปดาห์ ${remDays} วัน` : `${weeks} สัปดาห์`;
+
+    return {
+      startDateStr,
+      endDateStr,
+      totalDays,
+      weeksDisplay,
+      teachingDays,
+      weekdayHolidaysCount,
+      totalHolidaysInRange,
+      dayCounts
+    };
+  }
+
+  function computeTeacherSemesterLoads(dayCounts) {
+    const days = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"];
+    const teachers = Array.isArray(activeTeachers) ? activeTeachers : [];
+    const timetables = activeTimetables || {};
+    const periods = Array.isArray(activePeriods) ? activePeriods : [];
+    const teacherGrades = activeTeacherGrades || {};
+
+    return teachers.map((teacherName, tIdx) => {
+      const grade = teacherGrades[teacherName] || 'ป.1-3';
+      const dayPeriods = {
+        "จันทร์": 0,
+        "อังคาร": 0,
+        "พุธ": 0,
+        "พฤหัสบดี": 0,
+        "ศุกร์": 0
+      };
+
+      days.forEach(day => {
+        const daySchedule = (timetables[day] && timetables[day][tIdx]) || [];
+        let count = 0;
+        periods.forEach((period, pIdx) => {
+          if (period && !period.isBreak) {
+            const raw = String(daySchedule[pIdx] || '').trim();
+            if (raw && raw !== '-' && raw !== 'พัก' && raw !== 'พักกลางวัน') {
+              count++;
+            }
+          }
+        });
+        dayPeriods[day] = count;
+      });
+
+      const weeklyTotal = days.reduce((sum, d) => sum + dayPeriods[d], 0);
+
+      const semesterTotal = days.reduce((sum, d) => {
+        const dCount = dayCounts[d] || 0;
+        return sum + (dayPeriods[d] * dCount);
+      }, 0);
+
+      // คำนวณคาบลา (-) และคาบสอนแทน (+) ในภาคเรียนนี้
+      const subs = Array.isArray(activeSubstitutions) ? activeSubstitutions : [];
+      const cal = activeCalendar || DEFAULT_ACADEMIC_CALENDAR;
+      const start = cal.startDate;
+      const end = cal.endDate;
+
+      let leavePeriods = 0;
+      let subPeriods = 0;
+      const cleanName = String(teacherName || '').trim();
+
+      subs.forEach(r => {
+        if (!r) return;
+        if (r.date) {
+          if (start && r.date < start) return;
+          if (end && r.date > end) return;
+        }
+
+        const pId = Number(r.periodId || 0);
+        if (pId <= 0) return;
+
+        // 1. คาบที่ครูท่านนี้ลา (ขาดการสอนตามตาราง)
+        const absent = String(r.absentTeacher || '').trim();
+        if (absent === cleanName) {
+          leavePeriods++;
+        }
+
+        // 2. คาบที่ครูท่านนี้ไปสอนแทนครูท่านอื่น
+        const sub = String(r.substituteTeacher || '').trim();
+        if (sub === cleanName && !sub.includes('--') && sub !== 'ไม่มีผู้สอนแทน' && sub !== 'ติดสอน') {
+          subPeriods++;
+        }
+      });
+
+      // 3. รวมคาบสอนจริงสุทธิ (เอาคาบทั้งหมดมาบวกลบ)
+      const actualPeriods = semesterTotal - leavePeriods + subPeriods;
+
+      // 4. คิดเปอร์เซ็นต์คาบที่สอนจริงเทียบกับคาบรวมตั้งต้น
+      const actualPercent = semesterTotal > 0
+        ? (actualPeriods / semesterTotal) * 100
+        : (actualPeriods > 0 ? 100 : 0);
+
+      return {
+        teacherName,
+        teacherIndex: tIdx,
+        grade,
+        dayPeriods,
+        weeklyTotal,
+        semesterTotal,
+        leavePeriods,
+        subPeriods,
+        actualPeriods,
+        actualPercent
+      };
+    });
+  }
+
+  function renderCalendarTab(container) {
+    if (!activeCalendar) {
+      activeCalendar = { ...DEFAULT_ACADEMIC_CALENDAR };
+    }
+    if (!activeCalendar.holidays) {
+      activeCalendar.holidays = [];
+    }
+
+    const cal = activeCalendar;
+    const stats = computeCalendarStats(cal);
+
+    // Sorted holidays
+    const holidaysSorted = [...cal.holidays].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // Date displays in Thai
+    const startFormatted = formatHolidayDateDisplay(cal.startDate);
+    const endFormatted = formatHolidayDateDisplay(cal.endDate);
+
+    container.innerHTML = `
+      <div class="space-y-6 w-full">
+
+        <!-- Section 1: ปฏิทินภาคเรียน & กำหนดวันเปิด-ปิดภาคเรียน (Semester Settings & Header) -->
+        <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 p-5 sm:p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h3 class="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+                <span class="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <i data-lucide="calendar-days" class="w-5 h-5"></i>
+                </span>
+                ปฏิทินภาคเรียน & ตารางวันหยุด
+              </h3>
+              <p class="text-xs text-slate-500 mt-1">
+                กำหนดวันเปิด-ปิดภาคเรียน จัดการวันหยุดนักขัตฤกษ์ วันหยุดสถานศึกษา และกิจกรรมงดการเรียนการสอน
+              </p>
+            </div>
+            <span id="cal-date-range-badge" class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200/70 inline-flex items-center gap-1.5 transition-all self-start sm:self-center shrink-0">
+              <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+              ${startFormatted.text} – ${endFormatted.text}
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label for="cal-academic-year" class="block text-xs font-bold text-slate-700 mb-1.5">ปีการศึกษา</label>
+              <input type="text" id="cal-academic-year" value="${cal.academicYear || '2569'}" placeholder="เช่น 2569"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-2xs">
+            </div>
+
+            <div>
+              <label for="cal-term" class="block text-xs font-bold text-slate-700 mb-1.5">ภาคเรียน</label>
+              <select id="cal-term"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-2xs">
+                <option value="1" ${cal.term === '1' ? 'selected' : ''}>ภาคเรียนที่ 1</option>
+                <option value="2" ${cal.term === '2' ? 'selected' : ''}>ภาคเรียนที่ 2</option>
+                <option value="ฤดูร้อน" ${cal.term === 'ฤดูร้อน' ? 'selected' : ''}>ภาคเรียนฤดูร้อน (Summer)</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="cal-start-date" class="block text-xs font-bold text-slate-700 mb-1.5">วันเปิดภาคเรียน</label>
+              <input type="date" id="cal-start-date" value="${cal.startDate || '2026-05-16'}"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-2xs">
+            </div>
+
+            <div>
+              <label for="cal-end-date" class="block text-xs font-bold text-slate-700 mb-1.5">วันปิดภาคเรียน</label>
+              <input type="date" id="cal-end-date" value="${cal.endDate || '2026-10-10'}"
+                class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all shadow-2xs">
+            </div>
+          </div>
+
+          <div class="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs text-slate-600">
+            <span class="flex items-center gap-1.5">
+              <i data-lucide="info" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+              ระบบจะนำช่วงวันเปิด-ปิดภาคเรียน ไปคำนวณวันเรียนจริง (จันทร์-ศุกร์) โดยหักวันหยุดนักขัตฤกษ์และวันหยุดสถานศึกษาออกโดยอัตโนมัติ
+            </span>
+            <button type="button" id="btn-save-calendar-sub"
+              class="btn-press px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              <span>บันทึกการตั้งค่า</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 2: ภาพรวมและสถิติจำนวนวันเรียนในภาคเรียน (Semester Statistics) -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <!-- Metric 1: ระยะเวลาภาคเรียน -->
+          <div class="glass-card rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <i data-lucide="calendar" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">ระยะเวลาภาคเรียน</div>
+              <div class="text-base sm:text-lg font-black text-slate-800 leading-tight">${stats.totalDays} วัน</div>
+              <div class="text-[11px] text-indigo-600 font-bold mt-0.5">${stats.weeksDisplay}</div>
+            </div>
+          </div>
+
+          <!-- Metric 2: วันเปิดเรียนจริง (หักวันหยุด) -->
+          <div class="glass-card rounded-2xl p-4 sm:p-5 border border-emerald-200/80 bg-emerald-50/20 shadow-2xs flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">วันเปิดเรียนจริง (จ.-ศ.)</div>
+              <div class="text-base sm:text-lg font-black text-emerald-800 leading-tight">${stats.teachingDays} วันเรียน</div>
+              <div class="text-[11px] text-emerald-600 font-bold mt-0.5">หักวันหยุดแล้ว</div>
+            </div>
+          </div>
+
+          <!-- Metric 3: วันหยุดในภาคเรียน (ตรง จ.-ศ.) -->
+          <div class="glass-card rounded-2xl p-4 sm:p-5 border border-rose-200/80 bg-rose-50/20 shadow-2xs flex items-center gap-3">
+            <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <i data-lucide="sun" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">วันหยุดในภาคเรียน</div>
+              <div class="text-base sm:text-lg font-black text-rose-800 leading-tight">${stats.weekdayHolidaysCount} วัน</div>
+              <div class="text-[11px] text-rose-600 font-bold mt-0.5">กระทบวันเรียน จ.-ศ.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: ตารางวันหยุดและงดการเรียนการสอน (Holidays Table) -->
+        <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 p-5 sm:p-6 space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <h4 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                <span class="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
+                  <i data-lucide="calendar-off" class="w-4 h-4"></i>
+                </span>
+                วันหยุดนักขัตฤกษ์ วันหยุดสถานศึกษา และกิจกรรมงดการเรียนการสอน
+              </h4>
+              <p class="text-xs text-slate-500 mt-0.5">
+                วันหยุดที่ตรงกับวันจันทร์-ศุกร์ จะถูกหักออกจากจำนวนวันเรียนจริงเพื่อคำนวณคาบสอนอย่างแม่นยำ
+              </p>
+            </div>
+            <span class="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 self-start sm:self-auto">
+              ทั้งหมด ${holidaysSorted.length} รายการ
+            </span>
+          </div>
+
+          <!-- แบบฟอร์มเพิ่มวันหยุดใหม่ -->
+          <form id="form-add-holiday" class="bg-slate-50/80 border border-slate-200/90 rounded-2xl p-4 space-y-3">
+            <div class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-600"></i>
+              <span>เพิ่มวันหยุดใหม่ในภาคเรียน</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+              <div class="sm:col-span-3">
+                <label for="new-hol-date" class="block text-[11px] font-bold text-slate-600 mb-1">วันที่</label>
+                <input type="date" id="new-hol-date" required
+                  class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-2xs">
+              </div>
+
+              <div class="sm:col-span-5">
+                <label for="new-hol-name" class="block text-[11px] font-bold text-slate-600 mb-1">ชื่อวันหยุด / กิจกรรม</label>
+                <input type="text" id="new-hol-name" required placeholder="เช่น วันเฉลิมพระชนมพรรษาฯ หรือ วันไหว้ครู (งดเรียน)"
+                  class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-2xs">
+              </div>
+
+              <div class="sm:col-span-2">
+                <label for="new-hol-type" class="block text-[11px] font-bold text-slate-600 mb-1">ประเภท</label>
+                <select id="new-hol-type"
+                  class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 shadow-2xs">
+                  <option value="วันหยุดราชการ">วันหยุดราชการ</option>
+                  <option value="วันหยุดสถานศึกษา">วันหยุดสถานศึกษา</option>
+                  <option value="วันกิจกรรมงดสอน">วันกิจกรรมงดสอน</option>
+                  <option value="อื่นๆ">อื่นๆ</option>
+                </select>
+              </div>
+
+              <div class="sm:col-span-2">
+                <button type="submit" id="btn-add-holiday"
+                  class="w-full btn-press px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                  <i data-lucide="plus" class="w-4 h-4"></i>
+                  <span>เพิ่มวันหยุด</span>
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <!-- ตารางแสดงรายการวันหยุด -->
+          <div class="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs">
+            <div class="overflow-x-auto max-h-80 overflow-y-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold sticky top-0 z-10">
+                  <tr>
+                    <th class="py-3 px-3 text-center w-12">ลำดับ</th>
+                    <th class="py-3 px-3 w-36">วันที่</th>
+                    <th class="py-3 px-3 w-32">วันในสัปดาห์</th>
+                    <th class="py-3 px-3">ชื่อวันหยุด / กิจกรรม</th>
+                    <th class="py-3 px-3 w-36">ประเภท</th>
+                    <th class="py-3 px-3 w-44">ผลกระทบตารางสอน</th>
+                    <th class="py-3 px-3 text-center w-16">ลบ</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${holidaysSorted.length === 0 ? `
+                    <tr>
+                      <td colspan="7" class="py-8 text-center text-slate-400">
+                        <i data-lucide="calendar-check-2" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
+                        ยังไม่มีรายการวันหยุดในภาคเรียนนี้ — สามารถเพิ่มวันหยุดได้ที่ช่องด้านบน
+                      </td>
+                    </tr>
+                  ` : holidaysSorted.map((hol, idx) => {
+                    const dInfo = formatHolidayDateDisplay(hol.date);
+                    const dayCfg = THAI_DAY_CONFIG[dInfo.dayName] || { badgeClass: 'bg-slate-100 text-slate-700 border-slate-200', dotClass: 'bg-slate-400' };
+
+                    let typeBadge = 'bg-slate-100 text-slate-700 border-slate-200';
+                    if (hol.type === 'วันหยุดราชการ') typeBadge = 'bg-rose-100 text-rose-800 border-rose-200';
+                    else if (hol.type === 'วันหยุดสถานศึกษา') typeBadge = 'bg-amber-100 text-amber-800 border-amber-200';
+                    else if (hol.type === 'วันกิจกรรมงดสอน') typeBadge = 'bg-indigo-100 text-indigo-800 border-indigo-200';
+
+                    return `
+                      <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="py-2.5 px-3 text-center font-bold text-slate-400">${idx + 1}</td>
+                        <td class="py-2.5 px-3 font-semibold text-slate-800 font-mono text-[12px]">${dInfo.text}</td>
+                        <td class="py-2.5 px-3">
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${dayCfg.badgeClass}">
+                            <span class="w-1.5 h-1.5 rounded-full ${dayCfg.dotClass}"></span>
+                            วัน${dInfo.dayName}
+                          </span>
+                        </td>
+                        <td class="py-2.5 px-3 font-semibold text-slate-800">${hol.name || '-'}</td>
+                        <td class="py-2.5 px-3">
+                          <span class="inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold border ${typeBadge}">
+                            ${hol.type || 'วันหยุดราชการ'}
+                          </span>
+                        </td>
+                        <td class="py-2.5 px-3">
+                          ${dInfo.isWeekday ? `
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              <i data-lucide="bell" class="w-3 h-3 text-amber-600"></i> กระทบวันเรียน (จ.-ศ.)
+                            </span>
+                          ` : `
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                              <i data-lucide="moon" class="w-3 h-3 text-slate-400"></i> เสาร์-อาทิตย์
+                            </span>
+                          `}
+                        </td>
+                        <td class="py-2.5 px-3 text-center">
+                          <button type="button" data-id="${hol.id}"
+                            class="btn-delete-holiday p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                            title="ลบวันหยุดนี้">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    `;
+
+    // -----------------------------------------------------------
+    // Wire Events in Calendar Tab
+    // -----------------------------------------------------------
+
+    const handleSaveCalendarSettings = async () => {
+      const year = document.getElementById('cal-academic-year').value.trim();
+      const term = document.getElementById('cal-term').value.trim();
+      const startDate = document.getElementById('cal-start-date').value;
+      const endDate = document.getElementById('cal-end-date').value;
+
+      if (!year || !startDate || !endDate) {
+        if (global.TeachApp && global.TeachApp.showToast) {
+          global.TeachApp.showToast("กรุณากรอกข้อมูลปีการศึกษา วันเปิดและปิดภาคเรียนให้ครบถ้วน", "error");
+        }
+        return;
+      }
+
+      if (new Date(startDate) > new Date(endDate)) {
+        if (global.TeachApp && global.TeachApp.showToast) {
+          global.TeachApp.showToast("วันเปิดภาคเรียนต้องอยู่ก่อนวันปิดภาคเรียน", "error");
+        }
+        return;
+      }
+
+      activeCalendar.academicYear = year;
+      activeCalendar.term = term;
+      activeCalendar.startDate = startDate;
+      activeCalendar.endDate = endDate;
+
+      try {
+        if (btnSubSave) {
+          btnSubSave.disabled = true;
+          btnSubSave.className = "btn-press px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5";
+          btnSubSave.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>กำลังบันทึก...</span>`;
+        }
+        if (btnMainSave) {
+          btnMainSave.disabled = true;
+          btnMainSave.className = "btn-press px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5";
+          btnMainSave.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>กำลังบันทึก...</span>`;
+        }
+        if (window.lucide) window.lucide.createIcons();
+
+        if (saveAcademicCalendar) {
+          await saveAcademicCalendar(activeCalendar);
+        }
+        if (global.TeachApp && global.TeachApp.showToast) {
+          global.TeachApp.showToast("บันทึกการตั้งค่าปฏิทินภาคเรียนเรียบร้อยแล้ว", "success");
+        }
+
+        if (btnSubSave) {
+          btnSubSave.className = "btn-press px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5";
+          btnSubSave.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>บันทึกสำเร็จ!</span>`;
+        }
+        if (btnMainSave) {
+          btnMainSave.className = "btn-press px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5";
+          btnMainSave.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i><span>บันทึกสำเร็จ!</span>`;
+        }
+        if (window.lucide) window.lucide.createIcons();
+
+        setTimeout(() => {
+          renderCalendarTab(container);
+        }, 600);
+      } catch (err) {
+        if (btnSubSave) btnSubSave.disabled = false;
+        if (btnMainSave) btnMainSave.disabled = false;
+        updateCalendarDirtyUI();
+        if (global.TeachApp && global.TeachApp.showToast) {
+          global.TeachApp.showToast("เกิดข้อผิดพลาดในการบันทึก: " + err.message, "error");
+        }
+      }
+    };
+
+    const btnMainSave = document.getElementById('btn-save-calendar-main');
+    if (btnMainSave) btnMainSave.addEventListener('click', handleSaveCalendarSettings);
+
+    const btnSubSave = document.getElementById('btn-save-calendar-sub');
+    if (btnSubSave) btnSubSave.addEventListener('click', handleSaveCalendarSettings);
+
+    // Dirty state tracker for Calendar form inputs
+    const yearEl = document.getElementById('cal-academic-year');
+    const termEl = document.getElementById('cal-term');
+    const startEl = document.getElementById('cal-start-date');
+    const endEl = document.getElementById('cal-end-date');
+    const dateRangeBadge = document.getElementById('cal-date-range-badge');
+
+    const updateCalendarDirtyUI = () => {
+      if (!yearEl || !termEl || !startEl || !endEl) return;
+
+      const currentYear = yearEl.value.trim();
+      const currentTerm = termEl.value.trim();
+      const currentStart = startEl.value;
+      const currentEnd = endEl.value;
+
+      const origYear = String(activeCalendar.academicYear || '2569').trim();
+      const origTerm = String(activeCalendar.term || '1').trim();
+      const origStart = String(activeCalendar.startDate || '2026-05-16').trim();
+      const origEnd = String(activeCalendar.endDate || '2026-10-10').trim();
+
+      const yearChanged = currentYear !== origYear;
+      const termChanged = currentTerm !== origTerm;
+      const startChanged = currentStart !== origStart;
+      const endChanged = currentEnd !== origEnd;
+      const isDirty = yearChanged || termChanged || startChanged || endChanged;
+
+      const toggleInputDirty = (el, changed) => {
+        if (!el) return;
+        if (changed) {
+          el.classList.add('border-amber-400', 'ring-2', 'ring-amber-200/70', 'bg-amber-50/30');
+          el.classList.remove('border-slate-200');
+        } else {
+          el.classList.remove('border-amber-400', 'ring-2', 'ring-amber-200/70', 'bg-amber-50/30');
+          el.classList.add('border-slate-200');
+        }
+      };
+
+      toggleInputDirty(yearEl, yearChanged);
+      toggleInputDirty(termEl, termChanged);
+      toggleInputDirty(startEl, startChanged);
+      toggleInputDirty(endEl, endChanged);
+
+      // Sub save button (inside card)
+      if (btnSubSave) {
+        if (isDirty) {
+          btnSubSave.className = "btn-press px-4 py-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-orange-500/30 ring-2 ring-amber-300 animate-pulse flex items-center gap-1.5 cursor-pointer";
+          btnSubSave.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4 text-white"></i><span>⚠️ ยังไม่ได้บันทึก — กดบันทึกการตั้งค่า</span>`;
+        } else {
+          btnSubSave.className = "btn-press px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer";
+          btnSubSave.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5"></i><span>บันทึกการตั้งค่า</span>`;
+        }
+      }
+
+      // Main save button (top header)
+      if (btnMainSave) {
+        if (isDirty) {
+          btnMainSave.className = "btn-press hover-lift-sm px-5 py-2.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-black rounded-xl shadow-md shadow-orange-500/30 ring-2 ring-amber-300 transition-all flex items-center gap-1.5 cursor-pointer animate-pulse";
+          btnMainSave.innerHTML = `<i data-lucide="alert-triangle" class="w-4 h-4 text-white"></i><span>⚠️ ยังไม่ได้บันทึก — กดบันทึกข้อมูลปฏิทิน</span>`;
+        } else {
+          btnMainSave.className = "btn-press hover-lift-sm px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-emerald-500/20 transition-all flex items-center gap-1.5 cursor-pointer";
+          btnMainSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i><span>บันทึกข้อมูลปฏิทิน</span>`;
+        }
+      }
+
+      // Date range pill in card header
+      if (dateRangeBadge) {
+        const curStartInfo = formatHolidayDateDisplay(currentStart);
+        const curEndInfo = formatHolidayDateDisplay(currentEnd);
+        if (isDirty) {
+          dateRangeBadge.className = "text-xs font-bold text-amber-900 bg-amber-100 px-3 py-1 rounded-full border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs";
+          dateRangeBadge.innerHTML = `<i data-lucide="alert-circle" class="w-3.5 h-3.5 text-amber-600"></i> ${curStartInfo.text} – ${curEndInfo.text} <span class="text-[10px] text-amber-700 font-semibold">(ยังไม่บันทึก)</span>`;
+        } else {
+          dateRangeBadge.className = "text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/70 inline-flex items-center gap-1";
+          dateRangeBadge.innerHTML = `<i data-lucide="clock" class="w-3.5 h-3.5"></i> ${curStartInfo.text} – ${curEndInfo.text}`;
+        }
+      }
+
+      if (window.lucide) window.lucide.createIcons();
+    };
+
+    [yearEl, termEl, startEl, endEl].forEach(el => {
+      if (el) {
+        el.addEventListener('input', updateCalendarDirtyUI);
+        el.addEventListener('change', updateCalendarDirtyUI);
+      }
+    });
+
+    // Form Add Holiday
+    const formAddHoliday = document.getElementById('form-add-holiday');
+    if (formAddHoliday) {
+      formAddHoliday.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const date = document.getElementById('new-hol-date').value;
+        const name = document.getElementById('new-hol-name').value.trim();
+        const type = document.getElementById('new-hol-type').value;
+
+        if (!date || !name) {
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast("กรุณากรอกวันที่และชื่อวันหยุด", "error");
+          }
+          return;
+        }
+
+        const newHol = {
+          id: 'hol_' + Date.now(),
+          date,
+          name,
+          type
+        };
+
+        if (!activeCalendar.holidays) activeCalendar.holidays = [];
+        activeCalendar.holidays.push(newHol);
+
+        try {
+          if (saveAcademicCalendar) {
+            await saveAcademicCalendar(activeCalendar);
+          }
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast(`เพิ่มวันหยุด "${name}" เรียบร้อยแล้ว`, "success");
+          }
+          renderCalendarTab(container);
+        } catch (err) {
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast("เกิดข้อผิดพลาด: " + err.message, "error");
+          }
+        }
+      });
+    }
+
+    // Delete Holiday buttons
+    container.querySelectorAll('.btn-delete-holiday').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = e.currentTarget.dataset.id;
+        if (!id) return;
+
+        const hol = (activeCalendar.holidays || []).find(h => h.id === id);
+        const name = hol ? hol.name : 'วันหยุด';
+
+        activeCalendar.holidays = (activeCalendar.holidays || []).filter(h => h.id !== id);
+
+        try {
+          if (saveAcademicCalendar) {
+            await saveAcademicCalendar(activeCalendar);
+          }
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast(`ลบ "${name}" แล้ว`, "success");
+          }
+          renderCalendarTab(container);
+        } catch (err) {
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast("เกิดข้อผิดพลาด: " + err.message, "error");
+          }
+        }
+      });
+    });
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  // -------------------------------------------------------------
+  // TAB 5: TEACHING LOAD CALCULATION TAB (คำนวณคาบสอนจริง)
+  // -------------------------------------------------------------
+
+  function renderTeachingLoadTab(container) {
+    const cal = activeCalendar || DEFAULT_ACADEMIC_CALENDAR;
+    const stats = computeCalendarStats(cal);
+    const allTeacherLoads = computeTeacherSemesterLoads(stats.dayCounts);
+
+    // Thai date formats
+    const startFormatted = formatHolidayDateDisplay(cal.startDate);
+    const endFormatted = formatHolidayDateDisplay(cal.endDate);
+
+    container.innerHTML = `
+      <div class="space-y-6 w-full">
+
+        <!-- Header Actions Card -->
+        <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+              <span class="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                <i data-lucide="calculator" class="w-5 h-5"></i>
+              </span>
+              คำนวณคาบสอนจริงของข้าราชการครูรายภาคเรียน
+            </h3>
+            <p class="text-xs text-slate-500 mt-1">
+              คำนวณจากตารางสอนและจำนวนวันเปิดเรียนจริงตามปฏิทินภาคเรียน (หักวันหยุดนักขัตฤกษ์และวันหยุดสถานศึกษาแล้ว)
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2.5">
+            <button type="button" id="btn-goto-calendar-from-load"
+              class="btn-press hover-lift-sm px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer">
+              <i data-lucide="calendar-days" class="w-4 h-4 text-emerald-600"></i>
+              <span>จัดการปฏิทิน & วันหยุด</span>
+            </button>
+            <button type="button" id="btn-print-load-report"
+              class="btn-press hover-lift-sm px-4 sm:px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+              <span>พิมพ์รายงานภาระการสอน</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Semester Summary Info Ribbon -->
+        <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-indigo-50/30 to-purple-50/30 space-y-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-3">
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
+              <span class="font-bold text-slate-800">
+                ภาคเรียนที่ ${cal.term || '1'} ปีการศึกษา ${cal.academicYear || '2569'}
+              </span>
+              <span class="text-slate-400">•</span>
+              <span class="text-slate-600">
+                ${startFormatted.text} – ${endFormatted.text}
+              </span>
+              <span class="text-slate-400">•</span>
+              <span class="font-bold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md">
+                วันเปิดเรียนจริง ${stats.teachingDays} วัน
+              </span>
+            </div>
+            <div class="text-[11px] text-slate-500">
+              สูตร: คาบสอนจริงสุทธิ = คาบตั้งต้น - ลา (-) + สอนแทน (+)
+            </div>
+          </div>
+
+          <!-- Day Counts Pills -->
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <span class="text-[11px] font-bold text-slate-500 mr-1">จำนวนวันเรียนจริง:</span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200/70 text-amber-900 font-bold">
+              <span class="w-2 h-2 rounded-full bg-amber-500"></span> วันจันทร์: ${stats.dayCounts['จันทร์']} วัน
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-50 border border-pink-200/70 text-pink-900 font-bold">
+              <span class="w-2 h-2 rounded-full bg-pink-500"></span> วันอังคาร: ${stats.dayCounts['อังคาร']} วัน
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200/70 text-emerald-900 font-bold">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span> วันพุธ: ${stats.dayCounts['พุธ']} วัน
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 border border-orange-200/70 text-orange-900 font-bold">
+              <span class="w-2 h-2 rounded-full bg-orange-500"></span> วันพฤหัสบดี: ${stats.dayCounts['พฤหัสบดี']} วัน
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200/70 text-sky-900 font-bold">
+              <span class="w-2 h-2 rounded-full bg-sky-500"></span> วันศุกร์: ${stats.dayCounts['ศุกร์']} วัน
+            </span>
+          </div>
+        </div>
+
+        <!-- Teacher Semester Teaching Load Table -->
+        <div class="glass-card rounded-2xl shadow-xs border border-slate-200/80 p-5 sm:p-6 space-y-4">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <h4 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+                <span class="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <i data-lucide="users" class="w-4 h-4"></i>
+                </span>
+                ตารางสรุปคาบสอนจริงของครูรายบุคคล
+              </h4>
+              <p class="text-xs text-slate-500 mt-0.5">
+                เลือกกรองตามช่วงชั้น หรือพิมพ์ค้นหาชื่อคุณครูเพื่อตรวจสอบภาระงาน
+              </p>
+            </div>
+
+            <!-- Toolbar: กรองช่วงชั้น & จัดเรียง & ค้นหา -->
+            <div class="flex flex-wrap items-center gap-2">
+              <!-- Filter ช่วงชั้น -->
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-bold text-slate-500 hidden sm:inline">ช่วงชั้น:</span>
+                <select id="load-filter-grade"
+                  class="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs">
+                  <option value="ALL" ${calendarTeacherGradeFilter === 'ALL' ? 'selected' : ''}>ช่วงชั้นทั้งหมด</option>
+                  ${GRADE_BANDS.map(b => `<option value="${b.key}" ${calendarTeacherGradeFilter === b.key ? 'selected' : ''}>${b.key}</option>`).join('')}
+                </select>
+              </div>
+
+              <!-- เรียงลำดับ -->
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-bold text-slate-500 hidden sm:inline">เรียงตาม:</span>
+                <select id="load-sort-load"
+                  class="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs">
+                  <option value="default" ${calendarSortOrder === 'default' ? 'selected' : ''}>ตามลำดับรายชื่อ</option>
+                  <option value="desc" ${calendarSortOrder === 'desc' ? 'selected' : ''}>คาบสอนจริงมาก ➔ น้อย</option>
+                  <option value="asc" ${calendarSortOrder === 'asc' ? 'selected' : ''}>คาบสอนจริงน้อย ➔ มาก</option>
+                </select>
+              </div>
+
+              <!-- ค้นหาชื่อครู -->
+              <div class="relative">
+                <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                <input type="text" id="load-search-teacher" value="${calendarTeacherSearch}" placeholder="ค้นหาชื่อคุณครู..."
+                  class="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs w-36 sm:w-44">
+              </div>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div id="teaching-load-table-wrap" class="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold">
+                  <tr>
+                    <th class="py-3 px-3 text-center w-12">ลำดับ</th>
+                    <th class="py-3 px-3 min-w-[170px]">ชื่อ-สกุล ข้าราชการครู</th>
+                    <th class="py-3 px-3 text-center w-24">ช่วงชั้น</th>
+                    <th class="py-3 px-2 text-center w-12 bg-amber-50/50 text-amber-900" title="วันจันทร์ (${stats.dayCounts['จันทร์']} วัน)">จ</th>
+                    <th class="py-3 px-2 text-center w-12 bg-pink-50/50 text-pink-900" title="วันอังคาร (${stats.dayCounts['อังคาร']} วัน)">อ</th>
+                    <th class="py-3 px-2 text-center w-12 bg-emerald-50/50 text-emerald-900" title="วันพุธ (${stats.dayCounts['พุธ']} วัน)">พ</th>
+                    <th class="py-3 px-2 text-center w-12 bg-orange-50/50 text-orange-900" title="วันพฤหัสบดี (${stats.dayCounts['พฤหัสบดี']} วัน)">พฤ</th>
+                    <th class="py-3 px-2 text-center w-12 bg-sky-50/50 text-sky-900" title="วันศุกร์ (${stats.dayCounts['ศุกร์']} วัน)">ศ</th>
+                    <th class="py-3 px-2.5 text-center w-24 bg-indigo-50/40 text-indigo-900">รวม/สัปดาห์</th>
+                    <th class="py-3 px-3 text-center w-36 bg-emerald-50 text-emerald-950 font-black" title="คาบสอนทั้งเทอมตามตาราง (ตั้งต้น)">คาบตั้งต้น</th>
+                    <th class="py-3 px-2 text-center w-20 bg-rose-50/80 text-rose-800 font-bold" title="คาบที่ครูลา (หักออก)">ลา (-)</th>
+                    <th class="py-3 px-2 text-center w-20 bg-indigo-50/80 text-indigo-800 font-bold" title="คาบที่ครูไปสอนแทน (บวกเพิ่ม)">สอนแทน (+)</th>
+                    <th class="py-3 px-3 text-center w-36 bg-slate-100/70 text-slate-800 font-black" title="คาบสอนจริงสุทธิ (เทียบกับตั้งต้น เหมือนหุ้นขึ้น/ลง)">สอนจริงสุทธิ</th>
+                    <th class="py-3 px-2 text-center w-24 bg-purple-50 text-purple-950 font-bold" title="คิดเป็นร้อยละเทียบกับคาบตั้งต้น">% สอนจริง</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                </tbody>
+                <tfoot class="bg-slate-50/90 border-t-2 border-slate-200 font-bold text-slate-800">
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    `;
+
+    // Render table body & foot
+    renderTeachingLoadTableBody(container, stats);
+
+    // Live refresh substitutions from database
+    if (getSubstitutions) {
+      getSubstitutions().then(subs => {
+        if (subs && Array.isArray(subs)) {
+          activeSubstitutions = subs;
+          renderTeachingLoadTableBody(container, stats);
+        }
+      }).catch(err => console.warn(err));
+    }
+
+    // Wire Events in Teaching Load Tab
+    const btnGotoCal = document.getElementById('btn-goto-calendar-from-load');
+    if (btnGotoCal) {
+      btnGotoCal.addEventListener('click', () => {
+        activeAdminTab = 'calendar';
+        renderAdminDashboard();
+      });
+    }
+
+    const btnPrint = document.getElementById('btn-print-load-report');
+    if (btnPrint) {
+      btnPrint.addEventListener('click', () => {
+        printSemesterLoadReport(stats, allTeacherLoads);
+      });
+    }
+
+    const filterGradeEl = document.getElementById('load-filter-grade');
+    if (filterGradeEl) {
+      filterGradeEl.addEventListener('change', (e) => {
+        calendarTeacherGradeFilter = e.target.value;
+        renderTeachingLoadTableBody(container, stats);
+      });
+    }
+
+    const sortLoadEl = document.getElementById('load-sort-load');
+    if (sortLoadEl) {
+      sortLoadEl.addEventListener('change', (e) => {
+        calendarSortOrder = e.target.value;
+        renderTeachingLoadTableBody(container, stats);
+      });
+    }
+
+    const searchTeacherEl = document.getElementById('load-search-teacher');
+    if (searchTeacherEl) {
+      searchTeacherEl.addEventListener('input', (e) => {
+        calendarTeacherSearch = e.target.value;
+        renderTeachingLoadTableBody(container, stats);
+      });
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  function renderTeachingLoadTableBody(container, stats) {
+    const allTeacherLoads = computeTeacherSemesterLoads(stats.dayCounts);
+    let filtered = [...allTeacherLoads];
+
+    if (calendarTeacherGradeFilter !== 'ALL') {
+      filtered = filtered.filter(t => t.grade === calendarTeacherGradeFilter);
+    }
+    if (calendarTeacherSearch.trim()) {
+      const q = calendarTeacherSearch.trim().toLowerCase();
+      filtered = filtered.filter(t => t.teacherName.toLowerCase().includes(q));
+    }
+    if (calendarSortOrder === 'desc') {
+      filtered.sort((a, b) => (b.actualPeriods - a.actualPeriods) || (b.semesterTotal - a.semesterTotal));
+    } else if (calendarSortOrder === 'asc') {
+      filtered.sort((a, b) => (a.actualPeriods - b.actualPeriods) || (a.semesterTotal - b.semesterTotal));
+    }
+
+    const tbody = container.querySelector('tbody');
+    const tfoot = container.querySelector('tfoot');
+    if (!tbody) return;
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="14" class="py-8 text-center text-slate-400">
+            <i data-lucide="user-x" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
+            ไม่พบข้อมูลครูที่ตรงกับเงื่อนไขการค้นหา
+          </td>
+        </tr>
+      `;
+      if (tfoot) tfoot.innerHTML = '';
+      if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+
+    tbody.innerHTML = filtered.map((t, idx) => {
+      const band = GRADE_BANDS.find(b => b.key === t.grade) || {
+        key: t.grade,
+        badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+        cellBg: "bg-white",
+        dotClass: "bg-slate-400"
+      };
+
+      const leaveDisplay = t.leavePeriods > 0 
+        ? `<span class="inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-lg text-xs font-black bg-rose-100 text-rose-700 border border-rose-200 shadow-2xs">-${t.leavePeriods}</span>`
+        : `<span class="text-xs text-slate-300 font-medium">0</span>`;
+
+      const subDisplay = t.subPeriods > 0
+        ? `<span class="inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 rounded-lg text-xs font-black bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-2xs">+${t.subPeriods}</span>`
+        : `<span class="text-xs text-slate-300 font-medium">0</span>`;
+
+      const netDiff = t.actualPeriods - t.semesterTotal;
+      let actualStockHtml = '';
+      if (netDiff > 0) {
+        actualStockHtml = `
+          <div class="inline-flex items-center justify-center gap-1 font-black text-xs sm:text-sm text-emerald-600">
+            <i data-lucide="trending-up" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+            <span>${t.actualPeriods.toLocaleString()}</span>
+            <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">(+${netDiff})</span>
+          </div>
+        `;
+      } else if (netDiff < 0) {
+        actualStockHtml = `
+          <div class="inline-flex items-center justify-center gap-1 font-black text-xs sm:text-sm text-rose-600">
+            <i data-lucide="trending-down" class="w-4 h-4 text-rose-600 shrink-0"></i>
+            <span>${t.actualPeriods.toLocaleString()}</span>
+            <span class="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">(${netDiff})</span>
+          </div>
+        `;
+      } else {
+        actualStockHtml = `
+          <div class="inline-flex items-center justify-center gap-1 font-bold text-xs sm:text-sm text-slate-700">
+            <span class="text-xs text-slate-400 font-bold">▪</span>
+            <span>${t.actualPeriods.toLocaleString()}</span>
+            <span class="text-[10px] font-normal text-slate-400">คาบ</span>
+          </div>
+        `;
+      }
+
+      let pctStockHtml = '';
+      if (t.actualPercent > 100) {
+        pctStockHtml = `
+          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80">
+            <i data-lucide="arrow-up" class="w-3 h-3 text-emerald-600"></i> ${t.actualPercent.toFixed(1)}%
+          </span>
+        `;
+      } else if (t.actualPercent < 100) {
+        pctStockHtml = `
+          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200/80">
+            <i data-lucide="arrow-down" class="w-3 h-3 text-rose-600"></i> ${t.actualPercent.toFixed(1)}%
+          </span>
+        `;
+      } else {
+        pctStockHtml = `
+          <span class="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold text-slate-600 bg-slate-50 border border-slate-200/80">
+            100.0%
+          </span>
+        `;
+      }
+
+      return `
+        <tr class="hover:bg-slate-50/80 transition-colors">
+          <td class="py-2.5 px-3 text-center font-bold text-slate-400">${idx + 1}</td>
+          <td class="py-2.5 px-3">
+            <div class="font-bold text-slate-800">${t.teacherName}</div>
+          </td>
+          <td class="py-2.5 px-3 text-center">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${band.badgeClass}">
+              <span class="w-1.5 h-1.5 rounded-full ${band.dotClass}"></span>
+              ${band.key}
+            </span>
+          </td>
+          <td class="py-2.5 px-2 text-center font-semibold text-slate-700 bg-amber-50/20">${t.dayPeriods['จันทร์']}</td>
+          <td class="py-2.5 px-2 text-center font-semibold text-slate-700 bg-pink-50/20">${t.dayPeriods['อังคาร']}</td>
+          <td class="py-2.5 px-2 text-center font-semibold text-slate-700 bg-emerald-50/20">${t.dayPeriods['พุธ']}</td>
+          <td class="py-2.5 px-2 text-center font-semibold text-slate-700 bg-orange-50/20">${t.dayPeriods['พฤหัสบดี']}</td>
+          <td class="py-2.5 px-2 text-center font-semibold text-slate-700 bg-sky-50/20">${t.dayPeriods['ศุกร์']}</td>
+          <td class="py-2.5 px-2.5 text-center font-bold text-indigo-700 bg-indigo-50/30">
+            ${t.weeklyTotal} <span class="text-[10px] font-normal text-indigo-500">คาบ</span>
+          </td>
+          <td class="py-2.5 px-3 text-center bg-emerald-50/30">
+            <span class="inline-flex items-center justify-center px-3 py-1 rounded-xl font-black text-xs sm:text-sm bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-2xs">
+              ${t.semesterTotal.toLocaleString()} <span class="text-[10px] font-normal ml-1">คาบ</span>
+            </span>
+          </td>
+          <td class="py-2.5 px-2 text-center bg-rose-50/20">
+            ${leaveDisplay}
+          </td>
+          <td class="py-2.5 px-2 text-center bg-indigo-50/20">
+            ${subDisplay}
+          </td>
+          <td class="py-2.5 px-3 text-center">
+            ${actualStockHtml}
+          </td>
+          <td class="py-2.5 px-2 text-center">
+            ${pctStockHtml}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    if (tfoot) {
+      const totWeekly = filtered.reduce((s, t) => s + t.weeklyTotal, 0);
+      const totInitial = filtered.reduce((s, t) => s + t.semesterTotal, 0);
+      const totLeave = filtered.reduce((s, t) => s + t.leavePeriods, 0);
+      const totSub = filtered.reduce((s, t) => s + t.subPeriods, 0);
+      const totActual = filtered.reduce((s, t) => s + t.actualPeriods, 0);
+      const totPct = totInitial > 0 ? ((totActual / totInitial) * 100).toFixed(1) : '100.0';
+      const netTotalDiff = totActual - totInitial;
+
+      let netTotalHtml = '';
+      if (netTotalDiff > 0) {
+        netTotalHtml = `
+          <div class="inline-flex items-center justify-center gap-1 font-black text-sm text-emerald-700">
+            <i data-lucide="trending-up" class="w-4 h-4 text-emerald-600"></i>
+            <span>${totActual.toLocaleString()}</span>
+            <span class="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-300">(+${netTotalDiff})</span>
+          </div>
+        `;
+      } else if (netTotalDiff < 0) {
+        netTotalHtml = `
+          <div class="inline-flex items-center justify-center gap-1 font-black text-sm text-rose-700">
+            <i data-lucide="trending-down" class="w-4 h-4 text-rose-600"></i>
+            <span>${totActual.toLocaleString()}</span>
+            <span class="text-xs font-bold text-rose-700 bg-rose-100/80 px-1.5 py-0.5 rounded border border-rose-300">(${netTotalDiff})</span>
+          </div>
+        `;
+      } else {
+        netTotalHtml = `
+          <div class="inline-flex items-center justify-center gap-1 font-black text-sm text-slate-800">
+            <span>${totActual.toLocaleString()}</span>
+            <span class="text-xs font-normal text-slate-500">คาบ</span>
+          </div>
+        `;
+      }
+
+      let totPctHtml = '';
+      if (totActual > totInitial) {
+        totPctHtml = `
+          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-black text-emerald-800 bg-emerald-100/80 border border-emerald-300">
+            <i data-lucide="arrow-up" class="w-3.5 h-3.5"></i> ${totPct}%
+          </span>
+        `;
+      } else if (totActual < totInitial) {
+        totPctHtml = `
+          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-black text-rose-800 bg-rose-100/80 border border-rose-300">
+            <i data-lucide="arrow-down" class="w-3.5 h-3.5"></i> ${totPct}%
+          </span>
+        `;
+      } else {
+        totPctHtml = `
+          <span class="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-black text-slate-700 bg-slate-100 border border-slate-300">
+            100.0%
+          </span>
+        `;
+      }
+
+      tfoot.innerHTML = `
+        <tr>
+          <td colspan="3" class="py-3 px-3 text-right">รวมครูที่แสดง (${filtered.length} ท่าน):</td>
+          <td class="py-3 px-2 text-center bg-amber-50/30">${filtered.reduce((s, t) => s + t.dayPeriods['จันทร์'], 0)}</td>
+          <td class="py-3 px-2 text-center bg-pink-50/30">${filtered.reduce((s, t) => s + t.dayPeriods['อังคาร'], 0)}</td>
+          <td class="py-3 px-2 text-center bg-emerald-50/30">${filtered.reduce((s, t) => s + t.dayPeriods['พุธ'], 0)}</td>
+          <td class="py-3 px-2 text-center bg-orange-50/30">${filtered.reduce((s, t) => s + t.dayPeriods['พฤหัสบดี'], 0)}</td>
+          <td class="py-3 px-2 text-center bg-sky-50/30">${filtered.reduce((s, t) => s + t.dayPeriods['ศุกร์'], 0)}</td>
+          <td class="py-3 px-2.5 text-center text-indigo-800 bg-indigo-50/40 font-bold">
+            ${totWeekly} คาบ
+          </td>
+          <td class="py-3 px-3 text-center bg-emerald-50/40">
+            <span class="inline-flex items-center justify-center px-3 py-1 rounded-xl font-black text-xs sm:text-sm bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-2xs">
+              ${totInitial.toLocaleString()} คาบ
+            </span>
+          </td>
+          <td class="py-3 px-2 text-center text-rose-700 bg-rose-50/50 font-bold">
+            ${totLeave > 0 ? '-' + totLeave : '0'}
+          </td>
+          <td class="py-3 px-2 text-center text-indigo-700 bg-indigo-50/50 font-bold">
+            ${totSub > 0 ? '+' + totSub : '0'}
+          </td>
+          <td class="py-3 px-3 text-center">
+            ${netTotalHtml}
+          </td>
+          <td class="py-3 px-2 text-center">
+            ${totPctHtml}
+          </td>
+        </tr>
+      `;
+    }
+
+    if (window.lucide) window.lucide.createIcons();
+  }
+
+  const renderCalendarTeacherLoadTableBody = renderTeachingLoadTableBody;
+
+  function printSemesterLoadReport(stats, allLoads) {
+    const s = activeSettings || {};
+    const cal = activeCalendar || {};
+    const startThai = formatHolidayDateDisplay(cal.startDate);
+    const endThai = formatHolidayDateDisplay(cal.endDate);
+
+    const printArea = document.getElementById('print-section');
+    if (!printArea) return;
+
+    const totalSemester = allLoads.reduce((sum, t) => sum + t.semesterTotal, 0);
+
+    printArea.innerHTML = `
+      <div style="font-family: 'Sarabun', sans-serif; color: #000; padding: 20px 24px; font-size: 13px; line-height: 1.5;">
+        <!-- Header -->
+        <div style="text-align: center; margin-bottom: 16px;">
+          <h2 style="font-size: 18px; font-weight: bold; margin: 0 0 4px 0;">${s.schoolName || 'โรงเรียนชุมชนบ้านวังพิกุล'}</h2>
+          <h3 style="font-size: 15px; font-weight: bold; margin: 0 0 4px 0;">รายงานสรุปภาระงานสอนและคาบสอนจริงของข้าราชการครู รายภาคเรียน</h3>
+          <p style="font-size: 13px; margin: 0;">
+            ภาคเรียนที่ ${cal.term || '1'} ปีการศึกษา ${cal.academicYear || '2569'}
+            (ระหว่างวันที่ ${startThai.text} ถึง ${endThai.text})
+          </p>
+        </div>
+
+        <!-- Academic Calendar Stats Summary -->
+        <div style="border: 1px solid #999; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; background: #fafafa; font-size: 12px;">
+          <div style="font-weight: bold; margin-bottom: 4px;">สรุปวันทำการเรียนการสอน:</div>
+          <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <span>วันเปิดเรียนจริง: <strong>${stats.teachingDays} วัน</strong></span>
+            <span>วันจันทร์: <strong>${stats.dayCounts['จันทร์']} วัน</strong></span>
+            <span>วันอังคาร: <strong>${stats.dayCounts['อังคาร']} วัน</strong></span>
+            <span>วันพุธ: <strong>${stats.dayCounts['พุธ']} วัน</strong></span>
+            <span>วันพฤหัสบดี: <strong>${stats.dayCounts['พฤหัสบดี']} วัน</strong></span>
+            <span>วันศุกร์: <strong>${stats.dayCounts['ศุกร์']} วัน</strong></span>
+            <span>รวมภาระงานสอนทั้งโรงเรียน: <strong>${totalSemester.toLocaleString()} คาบ</strong></span>
+          </div>
+        </div>
+
+        <!-- Teacher Load Table -->
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 24px;">
+          <thead>
+            <tr style="background: #f0f0f0;">
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">ลำดับ</th>
+              <th style="border: 1px solid #333; padding: 6px 6px; text-align: left;">ชื่อ-สกุล คุณครู</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 60px;">ช่วงชั้น</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">จ</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">อ</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">พ</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">พฤ</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">ศ</th>
+              <th style="border: 1px solid #333; padding: 6px 6px; text-align: center; width: 75px;">คาบ/สัปดาห์</th>
+              <th style="border: 1px solid #333; padding: 6px 6px; text-align: center; width: 95px; font-weight: bold;">คาบสอนทั้งเทอม</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${allLoads.map((t, idx) => `
+              <tr>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${idx + 1}</td>
+                <td style="border: 1px solid #ccc; padding: 4px 6px;">${t.teacherName}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.grade}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['จันทร์']}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['อังคาร']}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['พุธ']}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['พฤหัสบดี']}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['ศุกร์']}</td>
+                <td style="border: 1px solid #ccc; padding: 4px 6px; text-align: center; font-weight: bold;">${t.weeklyTotal}</td>
+                <td style="border: 1px solid #ccc; padding: 4px 6px; text-align: center; font-weight: bold; background: #f9fdfa;">${t.semesterTotal.toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #f0f0f0; font-weight: bold;">
+              <td colspan="3" style="border: 1px solid #333; padding: 6px; text-align: right;">รวมทั้งสิ้น (${allLoads.length} ท่าน):</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['จันทร์'], 0)}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['อังคาร'], 0)}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['พุธ'], 0)}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['พฤหัสบดี'], 0)}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['ศุกร์'], 0)}</td>
+              <td style="border: 1px solid #333; padding: 6px 6px; text-align: center;">${allLoads.reduce((s, t) => s + t.weeklyTotal, 0)}</td>
+              <td style="border: 1px solid #333; padding: 6px 6px; text-align: center; background: #eaf7ed;">${totalSemester.toLocaleString()} คาบ</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <!-- Signatures -->
+        <div style="display: flex; justify-content: space-between; margin-top: 30px; page-break-inside: avoid;">
+          <div style="text-align: center; width: 45%;">
+            <p style="margin-bottom: 45px;">ลงชื่อ..............................................................</p>
+            <p style="font-weight: bold; margin: 0 0 2px 0;">(${s.academicHeadName || 'นางประชารักษ์ ศรีบรรเทา'})</p>
+            <p style="margin: 0;">${s.academicHeadPosition || 'ตำแหน่งหัวหน้ากลุ่มบริหารงานวิชาการ'}</p>
+          </div>
+          <div style="text-align: center; width: 45%;">
+            <p style="margin-bottom: 45px;">ลงชื่อ..............................................................</p>
+            <p style="font-weight: bold; margin: 0 0 2px 0;">(${s.directorRank ? s.directorRank + ' ' : ''}${s.directorName || 'ภาคภูมิ บัวทอง'})</p>
+            <p style="margin: 0;">${s.directorPosition || 'ตำแหน่งผู้อำนวยการโรงเรียนชุมชนบ้านวังพิกุล'}</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    window.print();
   }
 
   global.TeachAdmin = {

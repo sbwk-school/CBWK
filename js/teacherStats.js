@@ -3,14 +3,20 @@
  */
 
 (function(global) {
-  const db = global.TeachDatabase;
-  const { getTeachers, getSubstitutions, recordSubstitutions, deleteSubstitution, deleteSubstitutionsBatch } = db;
-  const { formatThaiDate } = global.TeachData;
+  const getDB = () => global.TeachDatabase || {};
+  const getTeachers = () => getDB().getTeachers();
+  const getSubstitutions = () => getDB().getSubstitutions();
+  const recordSubstitutions = (...args) => getDB().recordSubstitutions(...args);
+  const deleteSubstitution = (...args) => getDB().deleteSubstitution(...args);
+  const deleteSubstitutionsBatch = (...args) => getDB().deleteSubstitutionsBatch(...args);
+  const { formatThaiDate, getAdminPin, verifyAdminPin, GRADE_BANDS = [], DEFAULT_TEACHER_GRADES = {} } = global.TeachData || {};
 
   let cachedTeachers = [];
   let cachedSubstitutions = [];
+  let cachedTeacherGrades = {};
   let searchQuery = "";
   let sortBy = "subCountDesc";
+  let selectedGradeFilter = "ALL";
   let currentModalTab = "sub"; // 'sub' | 'leave'
 
   async function initTeacherStatsPage() {
@@ -19,6 +25,16 @@
 
     cachedTeachers = await getTeachers();
     cachedSubstitutions = await getSubstitutions();
+    if (getDB().getTeacherGrades) {
+      try {
+        const grades = await getDB().getTeacherGrades();
+        if (grades && typeof grades === 'object') {
+          cachedTeacherGrades = grades;
+        }
+      } catch (e) {
+        console.warn("Load teacher grades in stats error:", e);
+      }
+    }
 
     renderTeacherStatsUI();
   }
@@ -151,9 +167,11 @@
 
     let list = cachedTeachers.map((name, index) => {
       const stats = teacherStatsMap[name] || createEmptyTeacherStat(name);
+      const grade = (cachedTeacherGrades && cachedTeacherGrades[name]) || (DEFAULT_TEACHER_GRADES && DEFAULT_TEACHER_GRADES[name]) || 'ป.1-3';
       return {
         originalIndex: index + 1,
         name,
+        grade,
         subCount: stats.subCount,
         subHistory: stats.subHistory,
         leaveCounts: stats.leaveCounts,
@@ -166,23 +184,17 @@
       list = list.filter(item => item.name.toLowerCase().includes(q));
     }
 
-    // เรียงลำดับ
+    if (selectedGradeFilter && selectedGradeFilter !== 'ALL') {
+      list = list.filter(item => item.grade === selectedGradeFilter);
+    }
+
+    // เรียงลำดับ: มากไปน้อย / น้อยไปมาก / ตามลำดับ
     if (sortBy === 'subCountDesc') {
       list.sort((a, b) => b.subCount - a.subCount || a.originalIndex - b.originalIndex);
     } else if (sortBy === 'subCountAsc') {
       list.sort((a, b) => a.subCount - b.subCount || a.originalIndex - b.originalIndex);
-    } else if (sortBy === 'leaveTotalDesc') {
-      list.sort((a, b) => b.leaveCounts.total - a.leaveCounts.total || a.originalIndex - b.originalIndex);
-    } else if (sortBy === 'leaveTotalAsc') {
-      list.sort((a, b) => a.leaveCounts.total - b.leaveCounts.total || a.originalIndex - b.originalIndex);
-    } else if (sortBy === 'officialDutyDesc') {
-      list.sort((a, b) => b.leaveCounts.officialDuty - a.leaveCounts.officialDuty || a.originalIndex - b.originalIndex);
-    } else if (sortBy === 'personalDesc') {
-      list.sort((a, b) => b.leaveCounts.personal - a.leaveCounts.personal || a.originalIndex - b.originalIndex);
-    } else if (sortBy === 'sickDesc') {
-      list.sort((a, b) => b.leaveCounts.sick - a.leaveCounts.sick || a.originalIndex - b.originalIndex);
-    } else if (sortBy === 'nameAsc') {
-      list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+    } else if (sortBy === 'orderAsc') {
+      list.sort((a, b) => a.originalIndex - b.originalIndex);
     }
 
     container.innerHTML = `
@@ -201,27 +213,37 @@
               <p class="text-xs sm:text-sm text-slate-500 mt-1">ติดตามสถิติการลา (ไปราชการ, ลากิจ, ลาป่วย) และจำนวนครั้งการปฏิบัติหน้าที่สอนแทนของคุณครู</p>
             </div>
 
-            <!-- Controls: ค้นหา & เรียงลำดับ -->
-            <div class="flex flex-col sm:flex-row items-center gap-3">
-              <div class="relative w-full sm:w-72">
+            <!-- Controls: ค้นหา & ตัวกรองช่วงชั้น & เรียงลำดับ -->
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <div class="relative w-full sm:w-60">
                 <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
                 <input type="text" id="teacher-search-input" value="${searchQuery}" 
                   placeholder="ค้นหาชื่อคุณครู..." 
                   class="w-full pl-9 pr-4 py-2 bg-white border border-slate-200/90 rounded-xl text-xs sm:text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-2xs">
               </div>
 
-              <div class="flex items-center gap-2 w-full sm:w-auto">
+              <!-- ตัวกรองช่วงชั้น -->
+              <div class="flex items-center gap-1.5 w-full sm:w-auto">
+                <span class="text-xs font-semibold text-slate-500 whitespace-nowrap">ช่วงชั้น:</span>
+                <select id="teacher-grade-filter-select" 
+                  class="w-full sm:w-auto bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer">
+                  <option value="ALL" ${selectedGradeFilter === 'ALL' ? 'selected' : ''}>ทั้งหมด</option>
+                  <option value="อนุบาล" ${selectedGradeFilter === 'อนุบาล' ? 'selected' : ''}>🟠 อนุบาล</option>
+                  <option value="ป.1-3" ${selectedGradeFilter === 'ป.1-3' ? 'selected' : ''}>🟢 ป.1-3</option>
+                  <option value="ป.4-6" ${selectedGradeFilter === 'ป.4-6' ? 'selected' : ''}>🔴 ป.4-6</option>
+                  <option value="ม.1-3" ${selectedGradeFilter === 'ม.1-3' ? 'selected' : ''}>🔵 ม.1-3</option>
+                  <option value="ม.4-6" ${selectedGradeFilter === 'ม.4-6' ? 'selected' : ''}>🟣 ม.4-6</option>
+                </select>
+              </div>
+
+              <!-- เรียงลำดับ: มากไปน้อย / น้อยไปมาก / ตามลำดับ -->
+              <div class="flex items-center gap-1.5 w-full sm:w-auto">
                 <span class="text-xs font-semibold text-slate-500 whitespace-nowrap">เรียง:</span>
                 <select id="teacher-sort-select" 
                   class="w-full sm:w-auto bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer">
-                  <option value="subCountDesc" ${sortBy === 'subCountDesc' ? 'selected' : ''}>สอนแทนมากที่สุด ➔ น้อยที่สุด</option>
-                  <option value="subCountAsc" ${sortBy === 'subCountAsc' ? 'selected' : ''}>สอนแทนน้อยที่สุด ➔ มากที่สุด</option>
-                  <option value="leaveTotalDesc" ${sortBy === 'leaveTotalDesc' ? 'selected' : ''}>การลามากที่สุด ➔ น้อยที่สุด (รวม)</option>
-                  <option value="leaveTotalAsc" ${sortBy === 'leaveTotalAsc' ? 'selected' : ''}>การลาน้อยที่สุด ➔ มากที่สุด</option>
-                  <option value="officialDutyDesc" ${sortBy === 'officialDutyDesc' ? 'selected' : ''}>🏛️ ไปราชการมากที่สุด</option>
-                  <option value="personalDesc" ${sortBy === 'personalDesc' ? 'selected' : ''}>📝 ลากิจมากที่สุด</option>
-                  <option value="sickDesc" ${sortBy === 'sickDesc' ? 'selected' : ''}>🏥 ลาป่วยมากที่สุด</option>
-                  <option value="nameAsc" ${sortBy === 'nameAsc' ? 'selected' : ''}>ตามตัวอักษร ก-ฮ</option>
+                  <option value="subCountDesc" ${sortBy === 'subCountDesc' ? 'selected' : ''}>มากไปน้อย</option>
+                  <option value="subCountAsc" ${sortBy === 'subCountAsc' ? 'selected' : ''}>น้อยไปมาก</option>
+                  <option value="orderAsc" ${sortBy === 'orderAsc' ? 'selected' : ''}>ตามลำดับ</option>
                 </select>
               </div>
             </div>
@@ -263,13 +285,22 @@
                       ? 'bg-indigo-50 text-indigo-800 border-indigo-200/80' 
                       : 'bg-slate-100 text-slate-600 border-slate-200/80';
 
+                  const gradeBand = (GRADE_BANDS || []).find(b => b.key === teacher.grade) || {
+                    badgeClass: 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                  };
+
                   return `
                     <tr class="hover:bg-indigo-50/20 transition-colors">
                       <td class="py-3.5 px-3 text-center text-xs font-semibold text-slate-400">
                         ${teacher.originalIndex}
                       </td>
                       <td class="py-3.5 px-5">
-                        <div class="font-bold text-slate-800">${teacher.name}</div>
+                        <div class="flex items-center gap-2">
+                          <span class="font-bold text-slate-800">${teacher.name}</span>
+                          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${gradeBand.badgeClass} shrink-0">
+                            ${teacher.grade}
+                          </span>
+                        </div>
                       </td>
                       <td class="py-3.5 px-4 text-center">
                         <div class="flex items-center justify-center gap-1.5 flex-wrap">
@@ -349,6 +380,46 @@
           </div>
         </div>
       </div>
+
+      <!-- Modal: ยืนยันรหัสผ่านแอดมินก่อนลบข้อมูลประวัติ -->
+      <div id="admin-pin-confirm-modal" class="fixed inset-0 bg-slate-900/75 backdrop-blur-sm z-[9999] hidden items-center justify-center p-4" style="z-index: 9999 !important;">
+        <div id="admin-pin-modal-card" class="relative bg-white rounded-3xl shadow-2xl border border-slate-200/90 max-w-md w-full p-6 text-center animate-in fade-in zoom-in-95 duration-150 z-10">
+          <div class="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-100 shadow-xs">
+            <i data-lucide="shield-alert" class="w-7 h-7"></i>
+          </div>
+          
+          <h3 class="text-lg font-bold text-slate-800">ยืนยันรหัสผ่านแอดมินก่อนลบ</h3>
+          <p class="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">
+            ระบบต้องการรหัสผ่านผู้ดูแลระบบ (Admin PIN) เพื่อยืนยันการลบข้อมูลและป้องกันการลบโดยไม่ได้ตั้งใจ
+          </p>
+
+          <!-- รายละเอียดรายการที่จะลบ -->
+          <div id="admin-pin-item-detail" class="text-xs bg-slate-50 border border-slate-200/80 rounded-xl p-3 mb-4 text-slate-700 font-medium text-left leading-relaxed">
+          </div>
+
+          <!-- กล่องกรอกรหัส 4 หลัก -->
+          <div class="mb-4">
+            <label class="block text-xs font-bold text-slate-600 mb-1.5 text-center">กรุณากรอกรหัสแอดมิน 4 หลัก:</label>
+            <input type="password" id="admin-pin-confirm-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="••••"
+              class="w-40 mx-auto text-center text-xl tracking-[0.4em] font-black py-2.5 px-4 bg-slate-50 border-2 border-slate-300 rounded-xl focus:border-rose-500 focus:bg-white focus:ring-4 focus:ring-rose-100 outline-none transition-all">
+            <p id="admin-pin-confirm-error" class="text-xs text-rose-600 font-bold mt-2 hidden flex items-center justify-center gap-1">
+              <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+              <span>รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง</span>
+            </p>
+          </div>
+
+          <!-- ปุ่มกดยืนยัน / ยกเลิก -->
+          <div class="flex items-center justify-center gap-2 pt-2 border-t border-slate-100">
+            <button type="button" id="btn-cancel-admin-pin" class="btn-press flex-1 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer">
+              ยกเลิก
+            </button>
+            <button type="button" id="btn-submit-admin-pin" class="btn-press flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+              <span>ยืนยันลบข้อมูล</span>
+            </button>
+          </div>
+        </div>
+      </div>
     `;
 
     const searchInput = document.getElementById('teacher-search-input');
@@ -368,11 +439,21 @@
       }
     });
 
+    const gradeFilterSelect = document.getElementById('teacher-grade-filter-select');
+    if (gradeFilterSelect) {
+      gradeFilterSelect.addEventListener('change', (e) => {
+        selectedGradeFilter = e.target.value;
+        renderTeacherStatsUI();
+      });
+    }
+
     const sortSelect = document.getElementById('teacher-sort-select');
-    sortSelect.addEventListener('change', (e) => {
-      sortBy = e.target.value;
-      renderTeacherStatsUI();
-    });
+    if (sortSelect) {
+      sortSelect.addEventListener('change', (e) => {
+        sortBy = e.target.value;
+        renderTeacherStatsUI();
+      });
+    }
 
     const printReportButton = document.getElementById('btn-print-teacher-report');
     if (printReportButton) {
@@ -388,6 +469,7 @@
           "'": '&#39;'
         })[char]);
         const sortedLabel = sortSelect.options[sortSelect.selectedIndex]?.textContent.trim() || '';
+        const gradeFilterLabel = selectedGradeFilter !== 'ALL' ? ` • ช่วงชั้น: ${selectedGradeFilter}` : '';
         const searchLabel = searchQuery.trim()
           ? `<div>คำค้นหา: ${escapeHtml(searchQuery.trim())}</div>`
           : '';
@@ -398,7 +480,7 @@
         const reportRows = list.map((teacher, index) => `
           <tr>
             <td class="report-center">${index + 1}</td>
-            <td>${escapeHtml(teacher.name)}</td>
+            <td>${escapeHtml(teacher.name)} <small style="color:#64748b;">(${escapeHtml(teacher.grade)})</small></td>
             <td class="report-center">${teacher.leaveCounts.officialDuty}</td>
             <td class="report-center">${teacher.leaveCounts.personal}</td>
             <td class="report-center">${teacher.leaveCounts.sick}</td>
@@ -411,7 +493,7 @@
           <article class="teacher-stats-print-report">
             <header class="teacher-stats-report-header">
               <h1>รายงานสถิติการลาและการสอนแทน</h1>
-              <div>ข้อมูลคุณครู ${list.length} ท่าน • เรียงตาม${escapeHtml(sortedLabel)}</div>
+              <div>ข้อมูลคุณครู ${list.length} ท่าน${escapeHtml(gradeFilterLabel)} • เรียงตาม${escapeHtml(sortedLabel)}</div>
               ${searchLabel}
               <div>พิมพ์เมื่อ ${escapeHtml(printedAt)}</div>
             </header>
@@ -459,6 +541,107 @@
     document.getElementById('btn-close-history-modal-footer').addEventListener('click', closeModal);
 
     if (window.lucide) window.lucide.createIcons();
+  }
+
+  function checkAdminPin(entered) {
+    if (typeof verifyAdminPin === 'function') {
+      return verifyAdminPin(entered);
+    }
+    const saved = localStorage.getItem('teach_admin_pin');
+    const correctPin = (!saved || saved === '0000') ? '1111' : saved;
+    return String(entered || '').trim() === correctPin;
+  }
+
+  function requestAdminPinConfirm({ detailHtml, onConfirm }) {
+    const pinModal = document.getElementById('admin-pin-confirm-modal');
+    const pinCard = document.getElementById('admin-pin-modal-card');
+    const pinInput = document.getElementById('admin-pin-confirm-input');
+    const pinError = document.getElementById('admin-pin-confirm-error');
+    const pinDetail = document.getElementById('admin-pin-item-detail');
+    const btnCancel = document.getElementById('btn-cancel-admin-pin');
+    const btnSubmit = document.getElementById('btn-submit-admin-pin');
+
+    if (!pinModal || !pinInput) {
+      const entered = prompt("กรุณากรอกรหัสผ่านแอดมิน 4 หลัก เพื่อยืนยันการลบ:");
+      if (entered && checkAdminPin(entered)) {
+        onConfirm();
+      } else if (entered) {
+        alert("รหัสผ่านแอดมินไม่ถูกต้อง");
+      }
+      return;
+    }
+
+    if (pinDetail) pinDetail.innerHTML = detailHtml || '';
+    if (pinError) pinError.classList.add('hidden');
+    pinInput.value = '';
+    pinModal.classList.remove('hidden');
+    pinModal.classList.add('flex');
+    if (window.lucide) window.lucide.createIcons();
+
+    setTimeout(() => {
+      pinInput.focus();
+    }, 100);
+
+    const closeModal = () => {
+      pinModal.classList.add('hidden');
+      pinModal.classList.remove('flex');
+      pinInput.value = '';
+      if (pinError) pinError.classList.add('hidden');
+    };
+
+    btnCancel.onclick = closeModal;
+    pinModal.onclick = (e) => {
+      if (e.target === pinModal) closeModal();
+    };
+
+    let isSubmitting = false;
+    const doVerifyAndExecute = async () => {
+      if (isSubmitting) return;
+      const enteredPin = pinInput.value.trim();
+      if (checkAdminPin(enteredPin)) {
+        isSubmitting = true;
+        closeModal();
+        try {
+          await onConfirm();
+          if (global.TeachApp && global.TeachApp.showToast) {
+            global.TeachApp.showToast("ลบรายการประวัติเรียบร้อยแล้ว", "success");
+          }
+        } catch (err) {
+          console.error("Delete record error:", err);
+          alert("เกิดข้อผิดพลาดในการลบ: " + (err.message || err));
+        } finally {
+          isSubmitting = false;
+        }
+      } else {
+        if (pinError) pinError.classList.remove('hidden');
+        if (window.lucide) window.lucide.createIcons();
+        if (pinCard) {
+          pinCard.classList.remove('animate-shake');
+          void pinCard.offsetWidth;
+          pinCard.classList.add('animate-shake');
+        }
+        pinInput.value = '';
+        pinInput.focus();
+      }
+    };
+
+    btnSubmit.onclick = doVerifyAndExecute;
+
+    pinInput.oninput = () => {
+      if (pinError) pinError.classList.add('hidden');
+      if (pinInput.value.length === 4) {
+        setTimeout(doVerifyAndExecute, 120);
+      }
+    };
+
+    pinInput.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        doVerifyAndExecute();
+      } else if (e.key === 'Escape') {
+        closeModal();
+      }
+    };
   }
 
   function openTeacherHistoryModal(teacherName, stats) {
@@ -521,48 +704,72 @@
           `).join('');
 
           content.querySelectorAll('.btn-delete-sub-record').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
+            btn.addEventListener('click', (e) => {
               const id = e.currentTarget.dataset.id;
               const targetRecord = cachedSubstitutions.find(record => record.id === id);
               if (!targetRecord) return;
 
-              const sameLeaveRecords = cachedSubstitutions.filter(record =>
-                record.date === targetRecord.date && record.absentTeacher === targetRecord.absentTeacher
-              );
-              const preserveLeaveHistory = sameLeaveRecords.length === 1;
-              if (preserveLeaveHistory && typeof recordSubstitutions !== 'function') {
-                alert('ไม่สามารถลบรายการสอนแทนโดยเก็บประวัติการลาไว้ได้ กรุณาลองใหม่ภายหลัง');
-                return;
-              }
+              const detailHtml = `
+                <div class="space-y-1.5">
+                  <div class="font-bold text-slate-900 border-b border-slate-200 pb-1 flex items-center gap-1.5 text-rose-700">
+                    <i data-lucide="calendar-x" class="w-4 h-4"></i>
+                    <span>ยกเลิกการสอนแทนคาบนี้:</span>
+                  </div>
+                  <div><strong>วันที่:</strong> ${targetRecord.date} (${targetRecord.dayOfWeek || ''}) • คาบ ${targetRecord.periodId} (${targetRecord.periodTime || ''})</div>
+                  <div><strong>วิชา:</strong> ${targetRecord.subject || '-'} ${targetRecord.room ? `(${targetRecord.room})` : ''}</div>
+                  <div><strong>ครูผู้สอนแทนเดิม:</strong> <span class="font-bold text-indigo-700">${targetRecord.substituteTeacher || teacherName}</span></div>
+                  <div><strong>แทนคุณครู:</strong> <span class="text-rose-600 font-bold">${targetRecord.absentTeacher}</span> (${targetRecord.leaveType || 'ไปราชการ'})</div>
+                  <div class="text-emerald-700 font-semibold mt-1 text-[11px] bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                    💡 ระบบจะยกเลิกชื่อผู้สอนแทน และเปลี่ยนสถานะคาบนี้เป็น <strong>-- เลือกครูสอนแทน --</strong> โดยวิชาและข้อมูลคาบสอนจะยังคงอยู่ครบถ้วน
+                  </div>
+                </div>
+              `;
 
-              const confirmation = preserveLeaveHistory
-                ? 'ลบประวัติการสอนแทนรายการนี้ โดยเก็บสถิติการลาของครูไว้ใช่หรือไม่?'
-                : 'ต้องการลบประวัติการสอนแทนรายการนี้ใช่หรือไม่?';
-              if (!confirm(confirmation)) return;
+              requestAdminPinConfirm({
+                detailHtml,
+                onConfirm: async () => {
+                  const targetAbsentTeacher = String(targetRecord.absentTeacher || '').trim();
+                  const targetDate = targetRecord.date;
+                  const targetPeriodId = Number(targetRecord.periodId || 0);
 
-              try {
-                if (preserveLeaveHistory) {
-                  cachedSubstitutions = await recordSubstitutions([{
-                    date: targetRecord.date,
-                    dayOfWeek: targetRecord.dayOfWeek || '',
-                    absentTeacher: targetRecord.absentTeacher,
-                    leaveType: targetRecord.leaveType || 'ไปราชการ',
-                    periodId: 0,
-                    periodTime: '-',
-                    subject: 'ไม่ได้ระบุผู้สอนแทน',
-                    room: '-',
-                    substituteTeacher: ''
-                  }]);
-                } else {
-                  cachedSubstitutions = await deleteSubstitution(id);
+                  // ค้นหารายการทั้งหมดของครูที่ลาในวันดังกล่าวเพื่อคงวิชาและคาบอื่นๆ ไว้
+                  const sameTeacherRecords = (cachedSubstitutions || []).filter(r =>
+                    r && r.date === targetDate && String(r.absentTeacher || '').trim() === targetAbsentTeacher
+                  );
+
+                  let updatedTeacherRecords = [];
+                  if (sameTeacherRecords.length > 0) {
+                    updatedTeacherRecords = sameTeacherRecords.map(r => {
+                      if (r.id === targetRecord.id || (Number(r.periodId) === targetPeriodId && r.date === targetDate && String(r.absentTeacher || '').trim() === targetAbsentTeacher)) {
+                        return {
+                          ...r,
+                          substituteTeacher: '' // ปลดชื่อครูสอนแทนออก ให้กลับเป็นว่าง (--เลือกครูสอนแทน--) โดยคงวิชาและข้อมูลคาบไว้
+                        };
+                      }
+                      return r;
+                    });
+                  } else {
+                    updatedTeacherRecords = [{
+                      ...targetRecord,
+                      substituteTeacher: ''
+                    }];
+                  }
+
+                  if (typeof recordSubstitutions === 'function') {
+                    cachedSubstitutions = await recordSubstitutions(updatedTeacherRecords);
+                  } else if (typeof deleteSubstitution === 'function') {
+                    cachedSubstitutions = await deleteSubstitution(id);
+                  }
+
+                  renderTeacherStatsUI();
+                  const updatedStatsMap = calculateTeacherStats();
+                  openTeacherHistoryModal(teacherName, updatedStatsMap[teacherName] || createEmptyTeacherStat(teacherName));
+
+                  if (global.TeachApp && global.TeachApp.showToast) {
+                    global.TeachApp.showToast(`ยกเลิกการสอนแทนคาบ ${targetPeriodId} เรียบร้อย (เปลี่ยนสถานะเป็นเลือกครูสอนแทน)`, "success");
+                  }
                 }
-                renderTeacherStatsUI();
-                const updatedStatsMap = calculateTeacherStats();
-                openTeacherHistoryModal(teacherName, updatedStatsMap[teacherName] || createEmptyTeacherStat(teacherName));
-              } catch (error) {
-                console.error('Delete substitute history error:', error);
-                alert('ลบประวัติการสอนแทนไม่สำเร็จ กรุณาลองใหม่');
-              }
+              });
             });
           });
         }
@@ -610,7 +817,9 @@
                             </div>
                             <div class="text-slate-600 mt-1">
                               ${p.subject ? `วิชา: <strong>${p.subject}</strong><br>` : ''}
-                              ผู้สอนแทน: <span class="text-indigo-600 font-semibold">${p.substituteTeacher}</span>
+                              ผู้สอนแทน: ${p.substituteTeacher && p.substituteTeacher !== 'ไม่มีผู้สอนแทน'
+                                ? `<span class="text-indigo-600 font-semibold">${p.substituteTeacher}</span>`
+                                : `<span class="text-amber-600 font-semibold italic">⚠️ ยังไม่ได้ระบุผู้สอนแทน</span>`}
                             </div>
                           </div>
                         `).join('')}
@@ -623,21 +832,40 @@
           }).join('');
 
           content.querySelectorAll('.btn-delete-leave-event').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
+            btn.addEventListener('click', (e) => {
               const rawIds = e.currentTarget.dataset.recordIds;
               const ids = rawIds ? rawIds.split(',').filter(Boolean) : [];
-              if (confirm("ต้องการลบประวัติการลารายการนี้ใช่หรือไม่?")) {
-                if (deleteSubstitutionsBatch) {
-                  cachedSubstitutions = await deleteSubstitutionsBatch(ids);
-                } else {
-                  for (const id of ids) {
-                    cachedSubstitutions = await deleteSubstitution(id);
+              if (ids.length === 0) return;
+
+              const detailHtml = `
+                <div class="space-y-1.5">
+                  <div class="font-bold text-slate-900 border-b border-slate-200 pb-1 flex items-center gap-1.5 text-rose-700">
+                    <i data-lucide="file-x-2" class="w-4 h-4"></i>
+                    <span>ลบประวัติการลา:</span>
+                  </div>
+                  <div><strong>วันที่:</strong> ${event.date} (${event.dayOfWeek || ''})</div>
+                  <div><strong>คุณครูผู้ลา:</strong> <span class="font-bold text-slate-800">${teacherName}</span></div>
+                  <div><strong>ประเภทการลา:</strong> <span class="text-rose-600 font-bold">${event.leaveType}</span></div>
+                  <div><strong>จำนวนคาบที่บันทึกไว้:</strong> ${ids.length} คาบ</div>
+                  <div class="text-amber-700 font-semibold mt-1 text-[11px] bg-amber-50 p-1.5 rounded-lg border border-amber-200/80">* การลบรายการนี้จะลบสถิติการลาและคาบสอนแทนทั้งหมดของวันนี้</div>
+                </div>
+              `;
+
+              requestAdminPinConfirm({
+                detailHtml,
+                onConfirm: async () => {
+                  if (deleteSubstitutionsBatch) {
+                    cachedSubstitutions = await deleteSubstitutionsBatch(ids);
+                  } else {
+                    for (const id of ids) {
+                      cachedSubstitutions = await deleteSubstitution(id);
+                    }
                   }
+                  renderTeacherStatsUI();
+                  const updatedStatsMap = calculateTeacherStats();
+                  openTeacherHistoryModal(teacherName, updatedStatsMap[teacherName] || createEmptyTeacherStat(teacherName));
                 }
-                renderTeacherStatsUI();
-                const updatedStatsMap = calculateTeacherStats();
-                openTeacherHistoryModal(teacherName, updatedStatsMap[teacherName] || createEmptyTeacherStat(teacherName));
-              }
+              });
             });
           });
         }

@@ -48,7 +48,8 @@
     // วาง Toast ไว้มุมขวาล่าง (bottom-6 right-6) เพื่อไม่ให้บังเมนูด้านบน และปิดกั้นการกดแท็บ
     toast.style.display = 'flex';
     toast.style.pointerEvents = 'auto';
-    toast.className = `fixed bottom-6 right-6 z-50 max-w-sm sm:max-w-md ${borderClass} border text-slate-800 px-4 py-3 rounded-2xl shadow-xl shadow-slate-900/10 text-xs sm:text-sm font-semibold flex items-center justify-between gap-3 backdrop-blur-md transform transition-all duration-300 translate-y-0 opacity-100 pointer-events-auto`;
+    toast.style.zIndex = '10000';
+    toast.className = `fixed bottom-6 right-6 z-[10000] max-w-sm sm:max-w-md ${borderClass} border text-slate-800 px-4 py-3 rounded-2xl shadow-xl shadow-slate-900/10 text-xs sm:text-sm font-semibold flex items-center justify-between gap-3 backdrop-blur-md transform transition-all duration-300 translate-y-0 opacity-100 pointer-events-auto`;
     toast.innerHTML = `
       <div class="flex items-center gap-2.5">
         ${iconHtml}

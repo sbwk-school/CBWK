@@ -3,7 +3,7 @@
  */
 
 (function(global) {
-  const { DEFAULT_SCHOOL_SETTINGS, DEFAULT_PERIODS, TEACHER_NAMES, DEFAULT_TEACHER_GRADES, INITIAL_TIMETABLES } = global.TeachData;
+  const { DEFAULT_SCHOOL_SETTINGS, DEFAULT_PERIODS, DEFAULT_ACADEMIC_CALENDAR = {}, TEACHER_NAMES, DEFAULT_TEACHER_GRADES, INITIAL_TIMETABLES } = global.TeachData;
 
   // ฝังการตั้งค่า Firebase ของคุณโดยตรง
   const DEFAULT_FIREBASE_CONFIG = {
@@ -20,6 +20,7 @@
     FIREBASE_CONFIG: 'teach_firebase_config',
     SETTINGS: 'teach_school_settings',
     PERIODS: 'teach_periods',
+    CALENDAR: 'teach_academic_calendar',
     TEACHERS: 'teach_teachers',
     TEACHER_GRADES: 'teach_teacher_grades',
     TIMETABLES: 'teach_timetables',
@@ -238,6 +239,65 @@
         console.warn("Firestore save periods error:", e);
       }
     }
+  }
+
+  // -------------------------------------------------------------
+  // Academic Calendar & Holidays
+  // -------------------------------------------------------------
+  async function getAcademicCalendar() {
+    if (firestoreDb) {
+      try {
+        const doc = await firestoreDb.collection('settings').doc('calendar').get();
+        if (doc.exists && doc.data()) {
+          const data = doc.data();
+          return {
+            ...DEFAULT_ACADEMIC_CALENDAR,
+            ...data,
+            holidays: Array.isArray(data.holidays) ? data.holidays : (DEFAULT_ACADEMIC_CALENDAR.holidays || [])
+          };
+        }
+      } catch (e) {
+        console.warn("Firestore fetch academic calendar error:", e);
+      }
+    }
+
+    const local = localStorage.getItem(STORAGE_KEYS.CALENDAR);
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        return {
+          ...DEFAULT_ACADEMIC_CALENDAR,
+          ...parsed,
+          holidays: Array.isArray(parsed.holidays) ? parsed.holidays : (DEFAULT_ACADEMIC_CALENDAR.holidays || [])
+        };
+      } catch (e) {}
+    }
+    return { ...DEFAULT_ACADEMIC_CALENDAR };
+  }
+
+  async function saveAcademicCalendar(calendarData) {
+    const cleanData = {
+      academicYear: String((calendarData && calendarData.academicYear) || '2569').trim(),
+      term: String((calendarData && calendarData.term) || '1').trim(),
+      startDate: String((calendarData && calendarData.startDate) || '').trim(),
+      endDate: String((calendarData && calendarData.endDate) || '').trim(),
+      holidays: Array.isArray(calendarData && calendarData.holidays) ? calendarData.holidays : []
+    };
+
+    localStorage.setItem(STORAGE_KEYS.CALENDAR, JSON.stringify(cleanData));
+
+    if (firestoreDb) {
+      try {
+        await firestoreDb.collection('settings').doc('calendar').set({
+          ...cleanData,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (e) {
+        console.warn("Firestore save academic calendar error:", e);
+      }
+    }
+
+    return cleanData;
   }
 
   // -------------------------------------------------------------
@@ -794,6 +854,8 @@
     saveSchoolSettings,
     getPeriods,
     savePeriods,
+    getAcademicCalendar,
+    saveAcademicCalendar,
     getTeachers,
     saveTeachers,
     getTeacherGrades,

@@ -12,6 +12,7 @@
     formatThaiDate, 
     parseSubjectAndRoom,
     GRADE_BANDS = [
+      { key: "อนุบาล", label: "อนุบาล (ส้มพาสเทล)", colorName: "ส้ม", color: "amber", cellBg: "bg-amber-50", rowHover: "hover:bg-amber-100/80", badgeClass: "bg-amber-200/90 text-amber-950 border-amber-300", borderClass: "border-l-amber-500", dotClass: "bg-amber-500", textClass: "text-amber-950" },
       { key: "ป.1-3", label: "ป.1-3 (เขียวพาสเทล)", colorName: "เขียว", color: "emerald", cellBg: "bg-emerald-50", rowHover: "hover:bg-emerald-100/80", badgeClass: "bg-emerald-200/90 text-emerald-950 border-emerald-300", borderClass: "border-l-emerald-500", dotClass: "bg-emerald-500", textClass: "text-emerald-950" },
       { key: "ป.4-6", label: "ป.4-6 (แดงพาสเทล)", colorName: "แดง", color: "rose", cellBg: "bg-rose-50", rowHover: "hover:bg-rose-100/80", badgeClass: "bg-rose-200/90 text-rose-950 border-rose-300", borderClass: "border-l-rose-500", dotClass: "bg-rose-500", textClass: "text-rose-950" },
       { key: "ม.1-3", label: "ม.1-3 (ฟ้าพาสเทล)", colorName: "ฟ้า", color: "sky", cellBg: "bg-sky-50", rowHover: "hover:bg-sky-100/80", badgeClass: "bg-sky-200/90 text-sky-950 border-sky-300", borderClass: "border-l-sky-500", dotClass: "bg-sky-500", textClass: "text-sky-950" },
@@ -26,17 +27,15 @@
     }
   } = (global.TeachData || {});
 
-  const db = (global.TeachDatabase || global.TeachSupabase || {});
-  const { 
-    getSchoolSettings, 
-    getPeriods, 
-    getTeachers, 
-    getTeacherGrades,
-    getAllTimetables, 
-    getSubstitutions, 
-    recordSubstitutions,
-    deleteSubstitutionsForTeacher
-  } = db;
+  const getDb = () => (global.TeachDatabase || global.TeachSupabase || {});
+  const getSchoolSettings = () => getDb().getSchoolSettings ? getDb().getSchoolSettings() : Promise.resolve(null);
+  const getPeriods = () => getDb().getPeriods ? getDb().getPeriods() : Promise.resolve(null);
+  const getTeachers = () => getDb().getTeachers ? getDb().getTeachers() : Promise.resolve(null);
+  const getTeacherGrades = () => getDb().getTeacherGrades ? getDb().getTeacherGrades() : Promise.resolve(null);
+  const getAllTimetables = () => getDb().getAllTimetables ? getDb().getAllTimetables() : Promise.resolve(null);
+  const getSubstitutions = () => getDb().getSubstitutions ? getDb().getSubstitutions() : Promise.resolve(null);
+  const recordSubstitutions = (records) => getDb().recordSubstitutions ? getDb().recordSubstitutions(records) : Promise.resolve(null);
+  const deleteSubstitutionsForTeacher = (date, teacher) => getDb().deleteSubstitutionsForTeacher ? getDb().deleteSubstitutionsForTeacher(date, teacher) : Promise.resolve(null);
 
   let currentDate = new Date();
   let datePickerDismissHandler = null;
@@ -251,10 +250,22 @@
         }
         const item = map[r.absentTeacher];
         item.leaveType = r.leaveType || item.leaveType;
-        if (r.periodId && r.periodId > 0 && item.periods && item.periods[r.periodId]) {
-          if (r.substituteTeacher) item.periods[r.periodId].substituteTeacher = r.substituteTeacher;
-          if (r.subject) item.periods[r.periodId].subject = r.subject;
-          if (r.room) item.periods[r.periodId].room = r.room;
+        if (r.periodId && r.periodId > 0) {
+          if (!item.periods[r.periodId]) {
+            item.periods[r.periodId] = {
+              periodId: r.periodId,
+              periodName: `คาบ ${r.periodId}`,
+              periodTime: r.periodTime || '',
+              subject: r.subject || '',
+              room: r.room || '',
+              substituteTeacher: r.substituteTeacher || ''
+            };
+          } else {
+            item.periods[r.periodId].substituteTeacher = r.substituteTeacher || '';
+            if (r.subject) item.periods[r.periodId].subject = r.subject;
+            if (r.room) item.periods[r.periodId].room = r.room;
+            if (r.periodTime) item.periods[r.periodId].periodTime = r.periodTime;
+          }
         }
       });
       absentTeachersList = Object.values(map);
@@ -269,10 +280,22 @@
     if (records.length > 0) {
       item.leaveType = records[0].leaveType || item.leaveType;
       records.forEach(r => {
-        if (r.periodId && r.periodId > 0 && item.periods[r.periodId]) {
-          if (r.substituteTeacher) item.periods[r.periodId].substituteTeacher = r.substituteTeacher;
-          if (r.subject) item.periods[r.periodId].subject = r.subject;
-          if (r.room) item.periods[r.periodId].room = r.room;
+        if (r.periodId && r.periodId > 0) {
+          if (!item.periods[r.periodId]) {
+            item.periods[r.periodId] = {
+              periodId: r.periodId,
+              periodName: `คาบ ${r.periodId}`,
+              periodTime: r.periodTime || '',
+              subject: r.subject || '',
+              room: r.room || '',
+              substituteTeacher: r.substituteTeacher || ''
+            };
+          } else {
+            item.periods[r.periodId].substituteTeacher = r.substituteTeacher || '';
+            if (r.subject) item.periods[r.periodId].subject = r.subject;
+            if (r.room) item.periods[r.periodId].room = r.room;
+            if (r.periodTime) item.periods[r.periodId].periodTime = r.periodTime;
+          }
         }
       });
       item.isSaved = true;
@@ -303,10 +326,9 @@
     const records = [];
 
     const periodsList = Object.values(item.periods || {});
-    const assignedPeriods = periodsList.filter(p => p.substituteTeacher && p.substituteTeacher.trim());
 
-    if (assignedPeriods.length > 0) {
-      assignedPeriods.forEach(p => {
+    if (periodsList.length > 0) {
+      periodsList.forEach(p => {
         records.push({
           date: dateStr,
           dayOfWeek: dateInfo.dayOfWeek,
@@ -316,7 +338,7 @@
           periodTime: p.periodTime || '',
           subject: p.subject || '',
           room: p.room || '',
-          substituteTeacher: p.substituteTeacher
+          substituteTeacher: p.substituteTeacher || ''
         });
       });
     } else {
@@ -327,7 +349,7 @@
         leaveType: item.leaveType || 'ไปราชการ',
         periodId: 0,
         periodTime: '-',
-        subject: periodsList.length === 0 ? 'ไม่มีคาบสอนในวันดังกล่าว' : 'ไม่ได้ระบุผู้สอนแทน',
+        subject: 'ไม่มีคาบสอนในวันดังกล่าว',
         room: '-',
         substituteTeacher: ''
       });
@@ -998,9 +1020,9 @@
         const teacherIdx = teacherList.indexOf(name);
         const assignedClass = (teacherIdx >= 0 && dayTimetable[teacherIdx]) ? (dayTimetable[teacherIdx][pIndex] || "") : "";
         
-        // ตรวจสอบว่าถูกเลือกสอนแทนในคาบนี้ไปแล้วหรือยัง
+        // ตรวจสอบว่าถูกเลือกสอนแทนในคาบนี้ไปแล้วหรือยัง (ข้ามครูที่ลารายการปัจจุบัน เพื่อไม่ให้แจ้งเตือนชนกับตัวเอง)
         const isAlreadySubbingInThisPeriod = absentTeachersList.some(item => 
-          item && item.periods && item.periods[periodId] && item.periods[periodId].substituteTeacher === name
+          item && item.teacherName !== absentTeacherName && item.periods && item.periods[periodId] && item.periods[periodId].substituteTeacher === name
         );
 
         const isFree = !assignedClass.trim() && !isAlreadySubbingInThisPeriod;
@@ -1018,7 +1040,7 @@
           if (period && !period.isBreak) {
             const raw = (teacherIdx >= 0 && dayTimetable[teacherIdx]) ? (dayTimetable[teacherIdx][idx] || "") : "";
             const isSub = absentTeachersList.some(item => 
-              item && item.periods && item.periods[period.id] && item.periods[period.id].substituteTeacher === name
+              item && item.teacherName !== absentTeacherName && item.periods && item.periods[period.id] && item.periods[period.id].substituteTeacher === name
             );
             if (!raw.trim() && !isSub) {
               freePeriodsCount++;
@@ -1056,10 +1078,9 @@
 
     absentTeachersList.forEach(item => {
       const periodsList = Object.values(item.periods || {});
-      const assignedPeriods = periodsList.filter(p => p.substituteTeacher && p.substituteTeacher.trim());
 
-      if (assignedPeriods.length > 0) {
-        assignedPeriods.forEach(p => {
+      if (periodsList.length > 0) {
+        periodsList.forEach(p => {
           records.push({
             date: dateStr,
             dayOfWeek: dateInfo.dayOfWeek,
@@ -1069,11 +1090,11 @@
             periodTime: p.periodTime || '',
             subject: p.subject || '',
             room: p.room || '',
-            substituteTeacher: p.substituteTeacher
+            substituteTeacher: p.substituteTeacher || ''
           });
         });
       } else {
-        // ครูที่ลาแต่ไม่มีคาบสอนในวันนั้น หรือไม่ได้ระบุผู้สอนแทน
+        // ครูที่ลาแต่ไม่มีคาบสอนในวันนั้น
         // บันทึกเพื่อให้ระบบนับสถิติการลาได้ถูกต้อง
         records.push({
           date: dateStr,
@@ -1082,7 +1103,7 @@
           leaveType: item.leaveType || 'ไปราชการ',
           periodId: 0,
           periodTime: '-',
-          subject: periodsList.length === 0 ? 'ไม่มีคาบสอนในวันดังกล่าว' : 'ไม่ได้ระบุผู้สอนแทน',
+          subject: 'ไม่มีคาบสอนในวันดังกล่าว',
           room: '-',
           substituteTeacher: ''
         });
@@ -1187,6 +1208,8 @@
   }
 
   const GRADE_DOC_SUBJECTS = {
+    'อนุบาล': 'รายงานผลการสอนแทนระดับชั้นอนุบาล',
+    'อ.1-3': 'รายงานผลการสอนแทนระดับชั้นอนุบาล',
     'ป.1-3': 'รายงานผลการสอนแทนระดับชั้นประถมศึกษาปีที่ 1 – 3',
     'ป.4-6': 'รายงานผลการสอนแทนระดับชั้นประถมศึกษาปีที่ 4 – 6',
     'ม.1-3': 'รายงานผลการสอนแทนระดับชั้นมัธยมศึกษาปีที่ 1 – 3',

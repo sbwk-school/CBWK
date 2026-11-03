@@ -3,13 +3,14 @@
  */
 
 (function(global) {
-  const { DEFAULT_SCHOOL_SETTINGS, DEFAULT_PERIODS, TEACHER_NAMES, INITIAL_TIMETABLES } = global.TeachData;
+  const { DEFAULT_SCHOOL_SETTINGS, DEFAULT_PERIODS, DEFAULT_ACADEMIC_CALENDAR = {}, TEACHER_NAMES, INITIAL_TIMETABLES } = global.TeachData;
 
   const STORAGE_KEYS = {
     SUPABASE_URL: 'teach_supabase_url',
     SUPABASE_KEY: 'teach_supabase_key',
     SETTINGS: 'teach_school_settings',
     PERIODS: 'teach_periods',
+    CALENDAR: 'teach_academic_calendar',
     TEACHERS: 'teach_teachers',
     TIMETABLES: 'teach_timetables',
     SUBSTITUTIONS: 'teach_substitutions'
@@ -160,6 +161,33 @@
         console.warn("Supabase save periods error:", e);
       }
     }
+  }
+
+  async function getAcademicCalendar() {
+    const local = localStorage.getItem(STORAGE_KEYS.CALENDAR);
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        return {
+          ...DEFAULT_ACADEMIC_CALENDAR,
+          ...parsed,
+          holidays: Array.isArray(parsed.holidays) ? parsed.holidays : (DEFAULT_ACADEMIC_CALENDAR.holidays || [])
+        };
+      } catch (e) {}
+    }
+    return { ...DEFAULT_ACADEMIC_CALENDAR };
+  }
+
+  async function saveAcademicCalendar(calendarData) {
+    const cleanData = {
+      academicYear: String((calendarData && calendarData.academicYear) || '2569').trim(),
+      term: String((calendarData && calendarData.term) || '1').trim(),
+      startDate: String((calendarData && calendarData.startDate) || '').trim(),
+      endDate: String((calendarData && calendarData.endDate) || '').trim(),
+      holidays: Array.isArray(calendarData && calendarData.holidays) ? calendarData.holidays : []
+    };
+    localStorage.setItem(STORAGE_KEYS.CALENDAR, JSON.stringify(cleanData));
+    return cleanData;
   }
 
   async function getTeachers() {
@@ -431,6 +459,8 @@
     saveSchoolSettings,
     getPeriods,
     savePeriods,
+    getAcademicCalendar,
+    saveAcademicCalendar,
     getTeachers,
     saveTeachers,
     getAllTimetables,

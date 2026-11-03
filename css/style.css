@@ -138,6 +138,29 @@ body {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
+/* Excel-style table inputs in Edit Mode */
+.sheet-cell-edit-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff !important;
+  font-weight: 700;
+  text-align: center;
+  color: #0f172a !important;
+  outline: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+.sheet-cell-edit-input:hover {
+  border-color: #818cf8;
+}
+.sheet-cell-edit-input:focus {
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important;
+}
+
 /* Custom Thai date picker for the substitute day selector */
 .sub-date-picker {
   position: relative;

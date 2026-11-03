@@ -32,6 +32,20 @@
     { id: 7, name: "คาบ 7", time: "14.30 - 15.30", isBreak: false }
   ];
 
+  const DEFAULT_ACADEMIC_CALENDAR = {
+    academicYear: "2569",
+    term: "1",
+    startDate: "2026-05-16",
+    endDate: "2026-10-10",
+    holidays: [
+      { id: "hol_1", date: "2026-06-03", name: "วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าฯ พระบรมราชินี", type: "วันหยุดราชการ" },
+      { id: "hol_2", date: "2026-07-28", name: "วันเฉลิมพระชนมพรรษาพระบาทสมเด็จพระเจ้าอยู่หัว", type: "วันหยุดราชการ" },
+      { id: "hol_3", date: "2026-07-29", name: "วันอาสาฬหบูชา", type: "วันหยุดราชการ" },
+      { id: "hol_4", date: "2026-07-30", name: "วันเข้าพรรษา", type: "วันหยุดราชการ" },
+      { id: "hol_5", date: "2026-08-12", name: "วันแม่แห่งชาติ", type: "วันหยุดราชการ" }
+    ]
+  };
+
   const TEACHER_NAMES = [
     "นางสาวสุริศา อนันต์ธนถาวร",
     "นางสาววรรณนิศา ชิดทะวงค์",
@@ -66,6 +80,18 @@
   ];
 
   const GRADE_BANDS = [
+    { 
+      key: "อนุบาล", 
+      label: "อนุบาล (ส้มพาสเทล)", 
+      colorName: "ส้ม",
+      color: "amber", 
+      cellBg: "bg-amber-50", 
+      rowHover: "hover:bg-amber-100/80", 
+      badgeClass: "bg-amber-200/90 text-amber-950 border-amber-300", 
+      borderClass: "border-l-amber-500", 
+      dotClass: "bg-amber-500",
+      textClass: "text-amber-950" 
+    },
     { 
       key: "ป.1-3", 
       label: "ป.1-3 (เขียวพาสเทล)", 
@@ -390,14 +416,36 @@
     };
   }
 
+  const ADMIN_PIN_KEY = 'teach_admin_pin';
+  const DEFAULT_PIN = '1111';
+
+  function getAdminPin() {
+    try {
+      const saved = localStorage.getItem(ADMIN_PIN_KEY);
+      if (!saved || saved === '0000') return DEFAULT_PIN;
+      return saved;
+    } catch (e) {
+      return DEFAULT_PIN;
+    }
+  }
+
+  function verifyAdminPin(pin) {
+    return String(pin || '').trim() === getAdminPin();
+  }
+
   global.TeachData = {
     DEFAULT_SCHOOL_SETTINGS,
     DEFAULT_PERIODS,
+    DEFAULT_ACADEMIC_CALENDAR,
     TEACHER_NAMES,
     GRADE_BANDS,
     THAI_DAY_CONFIG,
     DEFAULT_TEACHER_GRADES,
     INITIAL_TIMETABLES,
+    ADMIN_PIN_KEY,
+    DEFAULT_PIN,
+    getAdminPin,
+    verifyAdminPin,
     parseSubjectAndRoom,
     formatThaiDate
   };
