@@ -1239,6 +1239,7 @@
         isSheetEditMode = true;
         originalTimetablesSnapshot = JSON.parse(JSON.stringify(activeTimetables));
         originalTeachersSnapshot = [...activeTeachers];
+        originalTeachersSnapshot._grades = { ...activeTeacherGrades };
         renderSpreadsheetTab(container);
       });
     }
@@ -1251,6 +1252,9 @@
           activeTimetables = JSON.parse(JSON.stringify(originalTimetablesSnapshot));
         }
         if (originalTeachersSnapshot) {
+          if (originalTeachersSnapshot._grades) {
+            activeTeacherGrades = { ...originalTeachersSnapshot._grades };
+          }
           activeTeachers = [...originalTeachersSnapshot];
         }
         isSheetEditMode = false;
@@ -1333,7 +1337,7 @@
     });
 
     container.querySelectorAll('.teacher-name-input').forEach(input => {
-      input.addEventListener('change', async (e) => {
+      input.addEventListener('change', (e) => {
         const idx = parseInt(e.target.dataset.index);
         const oldName = e.target.dataset.oldname || activeTeachers[idx];
         const newName = e.target.value.trim();
@@ -1342,12 +1346,6 @@
           delete activeTeacherGrades[oldName];
           activeTeachers[idx] = newName;
           e.target.dataset.oldname = newName;
-          try {
-            await saveTeacherRosterAndTimetables();
-            showRosterSaveResult();
-          } catch (error) {
-            showRosterSaveResult(error);
-          }
         }
       });
     });
@@ -2002,17 +2000,19 @@
       });
     });
 
-    // Search teacher input
+    // Search teacher input (filter rows in-place without destroying input focus or breaking Thai IME)
     const searchInput = container.querySelector('#teacher-search-input');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         teacherSearchQuery = e.target.value;
-        renderPeriodsTab(container);
-        const newInput = container.querySelector('#teacher-search-input');
-        if (newInput) {
-          newInput.focus();
-          newInput.selectionStart = newInput.selectionEnd = newInput.value.length;
-        }
+        const qLower = teacherSearchQuery.trim().toLowerCase();
+        const rows = container.querySelectorAll('tbody tr');
+        rows.forEach(tr => {
+          const nameInput = tr.querySelector('.teacher-name-periods-input');
+          if (!nameInput) return;
+          const tName = (nameInput.value || '').toLowerCase();
+          tr.style.display = (!qLower || tName.includes(qLower)) ? '' : 'none';
+        });
       });
     }
 
@@ -2634,6 +2634,7 @@
         const newPin = document.getElementById('cfg-new-pin').value.trim();
         if (newPin && newPin.length === 4) {
           localStorage.setItem(ADMIN_PIN_KEY, newPin);
+          activeSettings.adminPin = newPin;
         }
 
         delete activeSettings.rawLogoUrl;
@@ -3657,7 +3658,21 @@
     const btnPrint = document.getElementById('btn-print-load-report');
     if (btnPrint) {
       btnPrint.addEventListener('click', () => {
-        printSemesterLoadReport(stats, allTeacherLoads);
+        const freshStats = computeCalendarStats(activeCalendar || DEFAULT_ACADEMIC_CALENDAR);
+        let loadsToPrint = computeTeacherSemesterLoads(freshStats.dayCounts);
+        if (calendarTeacherGradeFilter !== 'ALL') {
+          loadsToPrint = loadsToPrint.filter(t => t.grade === calendarTeacherGradeFilter);
+        }
+        if (calendarTeacherSearch.trim()) {
+          const q = calendarTeacherSearch.trim().toLowerCase();
+          loadsToPrint = loadsToPrint.filter(t => t.teacherName.toLowerCase().includes(q));
+        }
+        if (calendarSortOrder === 'desc') {
+          loadsToPrint.sort((a, b) => (b.actualPeriods - a.actualPeriods) || (b.semesterTotal - a.semesterTotal));
+        } else if (calendarSortOrder === 'asc') {
+          loadsToPrint.sort((a, b) => (a.actualPeriods - b.actualPeriods) || (a.semesterTotal - b.semesterTotal));
+        }
+        printSemesterLoadReport(freshStats, loadsToPrint);
       });
     }
 
@@ -3932,21 +3947,25 @@
     if (!printArea) return;
 
     const totalSemester = allLoads.reduce((sum, t) => sum + t.semesterTotal, 0);
+    const totalLeave = allLoads.reduce((sum, t) => sum + (t.leavePeriods || 0), 0);
+    const totalSub = allLoads.reduce((sum, t) => sum + (t.subPeriods || 0), 0);
+    const totalActual = allLoads.reduce((sum, t) => sum + (t.actualPeriods || 0), 0);
+    const totalPct = totalSemester > 0 ? ((totalActual / totalSemester) * 100).toFixed(1) : '100.0';
 
     printArea.innerHTML = `
-      <div style="font-family: 'Sarabun', sans-serif; color: #000; padding: 20px 24px; font-size: 13px; line-height: 1.5;">
+      <div style="font-family: 'Sarabun', sans-serif; color: #000; padding: 16px 20px; font-size: 12.5px; line-height: 1.45;">
         <!-- Header -->
-        <div style="text-align: center; margin-bottom: 16px;">
-          <h2 style="font-size: 18px; font-weight: bold; margin: 0 0 4px 0;">${s.schoolName || 'โรงเรียนชุมชนบ้านวังพิกุล'}</h2>
-          <h3 style="font-size: 15px; font-weight: bold; margin: 0 0 4px 0;">รายงานสรุปภาระงานสอนและคาบสอนจริงของข้าราชการครู รายภาคเรียน</h3>
-          <p style="font-size: 13px; margin: 0;">
+        <div style="text-align: center; margin-bottom: 14px;">
+          <h2 style="font-size: 17px; font-weight: bold; margin: 0 0 3px 0;">${s.schoolName || 'โรงเรียนชุมชนบ้านวังพิกุล'}</h2>
+          <h3 style="font-size: 14.5px; font-weight: bold; margin: 0 0 3px 0;">รายงานสรุปภาระงานสอนและคาบสอนจริงของข้าราชการครู รายภาคเรียน</h3>
+          <p style="font-size: 12.5px; margin: 0;">
             ภาคเรียนที่ ${cal.term || '1'} ปีการศึกษา ${cal.academicYear || '2569'}
             (ระหว่างวันที่ ${startThai.text} ถึง ${endThai.text})
           </p>
         </div>
 
         <!-- Academic Calendar Stats Summary -->
-        <div style="border: 1px solid #999; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; background: #fafafa; font-size: 12px;">
+        <div style="border: 1px solid #999; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; background: #fafafa; font-size: 11.5px;">
           <div style="font-weight: bold; margin-bottom: 4px;">สรุปวันทำการเรียนการสอน:</div>
           <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
             <span>วันเปิดเรียนจริง: <strong>${stats.teachingDays} วัน</strong></span>
@@ -3955,52 +3974,50 @@
             <span>วันพุธ: <strong>${stats.dayCounts['พุธ']} วัน</strong></span>
             <span>วันพฤหัสบดี: <strong>${stats.dayCounts['พฤหัสบดี']} วัน</strong></span>
             <span>วันศุกร์: <strong>${stats.dayCounts['ศุกร์']} วัน</strong></span>
-            <span>รวมภาระงานสอนทั้งโรงเรียน: <strong>${totalSemester.toLocaleString()} คาบ</strong></span>
+            <span>คาบสอนตั้งต้นรวม: <strong>${totalSemester.toLocaleString()} คาบ</strong></span>
+            <span>สอนจริงสุทธิรวม: <strong>${totalActual.toLocaleString()} คาบ (${totalPct}%)</strong></span>
           </div>
         </div>
 
         <!-- Teacher Load Table -->
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 24px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;">
           <thead>
             <tr style="background: #f0f0f0;">
-              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">ลำดับ</th>
-              <th style="border: 1px solid #333; padding: 6px 6px; text-align: left;">ชื่อ-สกุล คุณครู</th>
-              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 60px;">ช่วงชั้น</th>
-              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">จ</th>
-              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">อ</th>
-              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">พ</th>
-              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">พฤ</th>
-              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 36px;">ศ</th>
-              <th style="border: 1px solid #333; padding: 6px 6px; text-align: center; width: 75px;">คาบ/สัปดาห์</th>
-              <th style="border: 1px solid #333; padding: 6px 6px; text-align: center; width: 95px; font-weight: bold;">คาบสอนทั้งเทอม</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 38px;">ลำดับ</th>
+              <th style="border: 1px solid #333; padding: 6px 8px; text-align: left;">ชื่อ-สกุล คุณครู</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 64px;">ช่วงชั้น</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 72px;">รวม/สัปดาห์</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 78px; font-weight: bold;">คาบตั้งต้น</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 58px;">ลา (-)</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 72px;">สอนแทน (+)</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 82px; font-weight: bold;">สอนจริงสุทธิ</th>
+              <th style="border: 1px solid #333; padding: 6px 4px; text-align: center; width: 68px; font-weight: bold;">% สอนจริง</th>
             </tr>
           </thead>
           <tbody>
             ${allLoads.map((t, idx) => `
               <tr>
                 <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${idx + 1}</td>
-                <td style="border: 1px solid #ccc; padding: 4px 6px;">${t.teacherName}</td>
+                <td style="border: 1px solid #ccc; padding: 4px 8px;">${t.teacherName}</td>
                 <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.grade}</td>
-                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['จันทร์']}</td>
-                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['อังคาร']}</td>
-                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['พุธ']}</td>
-                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['พฤหัสบดี']}</td>
-                <td style="border: 1px solid #ccc; padding: 4px; text-align: center;">${t.dayPeriods['ศุกร์']}</td>
-                <td style="border: 1px solid #ccc; padding: 4px 6px; text-align: center; font-weight: bold;">${t.weeklyTotal}</td>
-                <td style="border: 1px solid #ccc; padding: 4px 6px; text-align: center; font-weight: bold; background: #f9fdfa;">${t.semesterTotal.toLocaleString()}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center; font-weight: bold;">${t.weeklyTotal}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center; font-weight: bold;">${t.semesterTotal.toLocaleString()}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center; color: #b91c1c;">${t.leavePeriods > 0 ? '-' + t.leavePeriods : '0'}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center; color: #1d4ed8;">${t.subPeriods > 0 ? '+' + t.subPeriods : '0'}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center; font-weight: bold; background: #f9fdfa;">${t.actualPeriods.toLocaleString()}</td>
+                <td style="border: 1px solid #ccc; padding: 4px; text-align: center; font-weight: bold;">${Number(t.actualPercent || 0).toFixed(1)}%</td>
               </tr>
             `).join('')}
           </tbody>
           <tfoot>
             <tr style="background: #f0f0f0; font-weight: bold;">
-              <td colspan="3" style="border: 1px solid #333; padding: 6px; text-align: right;">รวมทั้งสิ้น (${allLoads.length} ท่าน):</td>
-              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['จันทร์'], 0)}</td>
-              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['อังคาร'], 0)}</td>
-              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['พุธ'], 0)}</td>
-              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['พฤหัสบดี'], 0)}</td>
-              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.dayPeriods['ศุกร์'], 0)}</td>
-              <td style="border: 1px solid #333; padding: 6px 6px; text-align: center;">${allLoads.reduce((s, t) => s + t.weeklyTotal, 0)}</td>
-              <td style="border: 1px solid #333; padding: 6px 6px; text-align: center; background: #eaf7ed;">${totalSemester.toLocaleString()} คาบ</td>
+              <td colspan="3" style="border: 1px solid #333; padding: 6px 8px; text-align: right;">รวมทั้งสิ้น (${allLoads.length} ท่าน):</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${allLoads.reduce((s, t) => s + t.weeklyTotal, 0)}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${totalSemester.toLocaleString()}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center; color: #b91c1c;">${totalLeave > 0 ? '-' + totalLeave : '0'}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center; color: #1d4ed8;">${totalSub > 0 ? '+' + totalSub : '0'}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center; background: #eaf7ed;">${totalActual.toLocaleString()}</td>
+              <td style="border: 1px solid #333; padding: 6px 4px; text-align: center;">${totalPct}%</td>
             </tr>
           </tfoot>
         </table>

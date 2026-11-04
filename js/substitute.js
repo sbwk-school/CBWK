@@ -371,6 +371,14 @@
     }
 
     try {
+      if (item.replacedTeacherNames && item.replacedTeacherNames.length > 0 && global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsForTeacher) {
+        for (const oldName of item.replacedTeacherNames) {
+          if (oldName && oldName !== item.teacherName) {
+            cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsForTeacher(dateStr, oldName);
+          }
+        }
+        item.replacedTeacherNames = [];
+      }
       cachedSubstitutions = await recordSubstitutions(records);
       item.isSaved = true;
       renderAbsentTeachersCards();
@@ -649,6 +657,19 @@
     }
   }
 
+  function clearAbsentTeachersFromSubstituteAssignments() {
+    const absentNamesSet = new Set(absentTeachersList.map(it => it && it.teacherName).filter(Boolean));
+    absentTeachersList.forEach(item => {
+      if (!item || !item.periods) return;
+      Object.values(item.periods).forEach(p => {
+        if (p && p.substituteTeacher && absentNamesSet.has(p.substituteTeacher)) {
+          p.substituteTeacher = "";
+          item.isSaved = false;
+        }
+      });
+    });
+  }
+
   function addAbsentTeacher() {
     const availableTeachers = cachedTeachers.filter(t => !absentTeachersList.some(item => item.teacherName === t));
     if (availableTeachers.length === 0) {
@@ -669,6 +690,7 @@
     populateTeacherPeriods(newAbsentItem);
     syncSavedStateForTeacher(newAbsentItem);
     absentTeachersList.push(newAbsentItem);
+    clearAbsentTeachersFromSubstituteAssignments();
     renderAbsentTeachersCards();
 
     // เลื่อนหน้าจอลงไปยังการ์ดของครูคนใหม่ที่เพิ่งเพิ่มโดยอัตโนมัติ
@@ -925,9 +947,21 @@
     container.querySelectorAll('.absent-teacher-select').forEach(select => {
       select.addEventListener('change', (e) => {
         const idx = parseInt(e.target.dataset.index);
-        absentTeachersList[idx].teacherName = e.target.value;
-        populateTeacherPeriods(absentTeachersList[idx], true);
-        syncSavedStateForTeacher(absentTeachersList[idx]);
+        const item = absentTeachersList[idx];
+        const prevName = item.teacherName;
+        const dateStr = toLocalISODate(currentDate);
+        const hadSavedPrev = (cachedSubstitutions || []).some(r => r.date === dateStr && r.absentTeacher === prevName);
+        if (hadSavedPrev && prevName !== e.target.value) {
+          if (!item.replacedTeacherNames) item.replacedTeacherNames = [];
+          if (!item.replacedTeacherNames.includes(prevName)) item.replacedTeacherNames.push(prevName);
+        }
+        item.teacherName = e.target.value;
+        populateTeacherPeriods(item, true);
+        syncSavedStateForTeacher(item);
+        if (item.replacedTeacherNames && item.replacedTeacherNames.length > 0) {
+          item.isSaved = false;
+        }
+        clearAbsentTeachersFromSubstituteAssignments();
         renderAbsentTeachersCards();
       });
     });
@@ -948,7 +982,7 @@
         if (!item) return;
 
         const dateStr = toLocalISODate(currentDate);
-        const thaiDateStr = formatThaiDate(currentDate).fullDate;
+        const thaiDateStr = formatThaiDate(currentDate).fullText;
         const hasSavedRecords = (cachedSubstitutions || []).some(
           r => r.date === dateStr && r.absentTeacher === item.teacherName
         );
@@ -1175,6 +1209,18 @@
     });
 
     try {
+      if (global.TeachDatabase && global.TeachDatabase.deleteSubstitutionsForTeacher) {
+        for (const item of absentTeachersList) {
+          if (item && item.replacedTeacherNames && item.replacedTeacherNames.length > 0) {
+            for (const oldName of item.replacedTeacherNames) {
+              if (oldName && oldName !== item.teacherName) {
+                cachedSubstitutions = await global.TeachDatabase.deleteSubstitutionsForTeacher(dateStr, oldName);
+              }
+            }
+            item.replacedTeacherNames = [];
+          }
+        }
+      }
       cachedSubstitutions = await recordSubstitutions(records);
       absentTeachersList.forEach(item => { item.isSaved = true; });
       const subCount = records.filter(r => r.substituteTeacher && r.substituteTeacher.trim()).length;

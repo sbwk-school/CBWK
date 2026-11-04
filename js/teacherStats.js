@@ -761,7 +761,11 @@
                     </span>
                   </div>
                   <button class="btn-delete-leave-event btn-press text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                    data-record-ids="${event.recordIds.join(',')}" title="ลบประวัติการลานี้">
+                    data-record-ids="${event.recordIds.join(',')}"
+                    data-date="${event.date || ''}"
+                    data-day="${event.dayOfWeek || ''}"
+                    data-leave-type="${event.leaveType || 'ไปราชการ'}"
+                    title="ลบประวัติการลานี้">
                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                   </button>
                 </div>
@@ -798,6 +802,9 @@
           content.querySelectorAll('.btn-delete-leave-event').forEach(btn => {
             btn.addEventListener('click', (e) => {
               const rawIds = e.currentTarget.dataset.recordIds;
+              const evDate = e.currentTarget.dataset.date || '-';
+              const evDay = e.currentTarget.dataset.day || '';
+              const evLeaveType = e.currentTarget.dataset.leaveType || 'ไปราชการ';
               const ids = rawIds ? rawIds.split(',').filter(Boolean) : [];
               if (ids.length === 0) return;
 
@@ -807,9 +814,9 @@
                     <i data-lucide="file-x-2" class="w-4 h-4"></i>
                     <span>ลบประวัติการลา:</span>
                   </div>
-                  <div><strong>วันที่:</strong> ${event.date} (${event.dayOfWeek || ''})</div>
+                  <div><strong>วันที่:</strong> ${evDate} ${evDay ? `(${evDay})` : ''}</div>
                   <div><strong>คุณครูผู้ลา:</strong> <span class="font-bold text-slate-800">${teacherName}</span></div>
-                  <div><strong>ประเภทการลา:</strong> <span class="text-rose-600 font-bold">${event.leaveType}</span></div>
+                  <div><strong>ประเภทการลา:</strong> <span class="text-rose-600 font-bold">${evLeaveType}</span></div>
                   <div><strong>จำนวนคาบที่บันทึกไว้:</strong> ${ids.length} คาบ</div>
                   <div class="text-amber-700 font-semibold mt-1 text-[11px] bg-amber-50 p-1.5 rounded-lg border border-amber-200/80">* การลบรายการนี้จะลบสถิติการลาและคาบสอนแทนทั้งหมดของวันนี้</div>
                 </div>

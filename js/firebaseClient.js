@@ -151,6 +151,9 @@
         if (doc.exists) {
           const data = doc.data() || {};
           delete data.rawLogoUrl;
+          if (data.adminPin && String(data.adminPin).trim().length === 4) {
+            try { localStorage.setItem('teach_admin_pin', String(data.adminPin).trim()); } catch (e) {}
+          }
           return { ...DEFAULT_SCHOOL_SETTINGS, ...data };
         }
       } catch (e) {
@@ -379,14 +382,56 @@
   // -------------------------------------------------------------
   // Timetables
   // -------------------------------------------------------------
+  function sanitizeSubjectText(val) {
+    if (!val || typeof val !== 'string') return val || "";
+    return val
+      .replace(/สุฃศึกษา/g, "สุขศึกษา")
+      .replace(/อังกฤเพิ่มเติม/g, "อังกฤษเพิ่มเติม")
+      .replace(/ประวัติศาสร์/g, "ประวัติศาสตร์")
+      .replace(/คณิต์/g, "คณิต")
+      .replace(/นาฎศิลป์/g, "นาฏศิลป์")
+      .replace(/แนะแนว ม\.1-4/g, "แนะแนว ม.1-3")
+      .replace(/ชุมนุม ม\.1-4/g, "ชุมนุม ม.1-3")
+      .replace(/อบรมคุณธรรม ป\.4-7/g, "อบรมคุณธรรม ป.4-6")
+      .replace(/ลูกเสือ - เนตรนารี/g, "ลูกเสือ-เนตรนารี")
+      .replace(/ม\.\.+/g, "ม.")
+      .replace(/ป\.\.+/g, "ป.")
+      .replace(/ม\.\s+(\d)/g, "ม.$1")
+      .replace(/ป\.\s+(\d)/g, "ป.$1");
+  }
+
+  function sanitizeTimetablesMap(timetablesMap) {
+    if (!timetablesMap || typeof timetablesMap !== 'object') return { map: timetablesMap, changed: false };
+    let changed = false;
+    const cleanedMap = {};
+    Object.keys(timetablesMap).forEach(day => {
+      const grid = timetablesMap[day];
+      if (Array.isArray(grid)) {
+        cleanedMap[day] = grid.map(row => {
+          if (!Array.isArray(row)) return row;
+          return row.map(cell => {
+            const cleanCell = sanitizeSubjectText(cell);
+            if (cleanCell !== cell) changed = true;
+            return cleanCell;
+          });
+        });
+      } else {
+        cleanedMap[day] = grid;
+      }
+    });
+    return { map: cleanedMap, changed };
+  }
+
   async function getAllTimetables() {
     if (firestoreDb) {
       try {
         const snapshot = await firestoreDb.collection('timetables').get();
         if (!snapshot.empty) {
           const result = {};
+          let teachersRef = [];
           snapshot.forEach(doc => {
             const data = doc.data();
+            if (Array.isArray(data.teachers) && data.teachers.length > 0) teachersRef = data.teachers;
             let grid = null;
             if (data.gridJson) {
               try { grid = JSON.parse(data.gridJson); } catch (e) {}
@@ -402,7 +447,14 @@
           });
           const days = ["จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์"];
           const complete = days.every(d => result[d] && result[d].length > 0);
-          if (complete) return result;
+          if (complete) {
+            const { map: cleanResult, changed } = sanitizeTimetablesMap(result);
+            localStorage.setItem(STORAGE_KEYS.TIMETABLES, JSON.stringify(cleanResult));
+            if (changed) {
+              saveAllTimetables(cleanResult, teachersRef.length ? teachersRef : TEACHER_NAMES).catch(() => {});
+            }
+            return cleanResult;
+          }
         }
       } catch (e) {
         console.warn("Firestore timetables fetch error:", e);
@@ -411,7 +463,12 @@
 
     const local = localStorage.getItem(STORAGE_KEYS.TIMETABLES);
     if (local) {
-      try { return JSON.parse(local); } catch (e) {}
+      try {
+        const parsed = JSON.parse(local);
+        const { map: cleanLocal, changed } = sanitizeTimetablesMap(parsed);
+        if (changed) localStorage.setItem(STORAGE_KEYS.TIMETABLES, JSON.stringify(cleanLocal));
+        return cleanLocal;
+      } catch (e) {}
     }
 
     localStorage.setItem(STORAGE_KEYS.TIMETABLES, JSON.stringify(INITIAL_TIMETABLES));
