@@ -27,6 +27,9 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
+  <!-- html2canvas (HTML DOM to Canvas / Image generator) -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
   <!-- Custom Styles & Print Styles -->
   <link rel="stylesheet" href="css/style.css?v=5.0">
 
@@ -160,6 +163,14 @@
               <option value="ม.4-6">🟣 ม.4-6</option>
             </select>
           </div>
+
+          <!-- 0. บันทึกเป็นรูปภาพ (สำหรับส่งไลน์กลุ่ม) -->
+          <button id="btn-save-image" 
+            class="px-3.5 sm:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            title="บันทึกเอกสารเป็นรูปภาพ (PNG) เพื่อส่งแจ้งครูในไลน์กลุ่ม (และคัดลอกลงคลิปบอร์ดพร้อมวาง Ctrl+V ได้ทันที)">
+            <i data-lucide="image" class="w-4 h-4"></i>
+            <span>บันทึกภาพ</span>
+          </button>
 
           <!-- 1. เปิดหน้าพิมพ์เพื่อบันทึกเป็น PDF -->
           <button id="btn-save-pdf" 
@@ -329,7 +340,7 @@
   <!-- App Scripts in Order (Works seamlessly with file:/// and http(s)://) -->
   <script src="js/data.js?v=3.7"></script>
   <script src="js/firebaseClient.js?v=3.3"></script>
-  <script src="js/substitute.js?v=4.4"></script>
+  <script src="js/substitute.js?v=4.5"></script>
   <script src="js/teacherStats.js?v=3.7"></script>
   <script src="js/adminSheet.js?v=4.7"></script>
   <script src="js/app.js?v=3.5"></script>

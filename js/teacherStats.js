@@ -121,7 +121,8 @@
             periodTime: item.periodTime || '',
             subject: item.subject || '',
             room: item.room || '',
-            substituteTeacher: item.substituteTeacher || 'ไม่มีผู้สอนแทน'
+            substituteTeacher: item.substituteTeacher || 'ไม่มีผู้สอนแทน',
+            isSelf: Boolean(item.isSelf)
           });
         }
       }
@@ -279,11 +280,9 @@
                     </td>
                   </tr>
                 ` : list.map((teacher) => {
-                  const badgeColor = teacher.subCount >= 5 
-                    ? 'bg-rose-50 text-rose-800 border-rose-200/80' 
-                    : teacher.subCount > 0 
-                      ? 'bg-indigo-50 text-indigo-800 border-indigo-200/80' 
-                      : 'bg-slate-100 text-slate-600 border-slate-200/80';
+                  const badgeColor = teacher.subCount > 0 
+                    ? 'bg-indigo-50 text-indigo-800 border-indigo-200/80' 
+                    : 'bg-slate-100 text-slate-600 border-slate-200/80';
 
                   const gradeBand = (GRADE_BANDS || []).find(b => b.key === teacher.grade) || {
                     badgeClass: 'bg-emerald-100 text-emerald-950 border-emerald-300'
@@ -785,9 +784,11 @@
                             </div>
                             <div class="text-slate-600 mt-1">
                               ${p.subject ? `วิชา: <strong>${p.subject}</strong><br>` : ''}
-                              ผู้สอนแทน: ${p.substituteTeacher && p.substituteTeacher !== 'ไม่มีผู้สอนแทน'
-                                ? `<span class="text-indigo-600 font-semibold">${p.substituteTeacher}</span>`
-                                : `<span class="text-amber-600 font-semibold italic">⚠️ ยังไม่ได้ระบุผู้สอนแทน</span>`}
+                              ผู้สอนแทน: ${p.isSelf
+                                ? `<span class="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">🟢 สอนเอง (ไม่นับเป็นคาบลา)</span>`
+                                : (p.substituteTeacher && p.substituteTeacher !== 'ไม่มีผู้สอนแทน'
+                                  ? `<span class="text-indigo-600 font-semibold">${p.substituteTeacher}</span>`
+                                  : `<span class="text-amber-600 font-semibold italic">⚠️ ยังไม่ได้ระบุผู้สอนแทน</span>`)}
                             </div>
                           </div>
                         `).join('')}

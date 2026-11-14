@@ -843,7 +843,7 @@ body {
   margin-bottom: 8px;
   font-family: var(--font-doc);
   font-size: 13.5px;
-  border: 0 !important;
+  border: 1px solid #000000 !important;
 }
 .gov-table th,
 .gov-table td,
@@ -853,7 +853,7 @@ body {
 
 .gov-table th,
 .gov-table td {
-  border: 0.75pt solid #000000 !important;
+  border: 1px solid #000000 !important;
   padding: 0 !important;
   text-align: center;
   vertical-align: middle !important;
@@ -875,6 +875,7 @@ body {
   vertical-align: middle !important;
   padding: 0 !important;
   height: 100% !important;
+  border-top: 1px solid #000000 !important;
 }
 
 /* Vertical Text for Lunch Break (Fallback) */

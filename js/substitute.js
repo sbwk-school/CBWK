@@ -273,10 +273,12 @@
               periodTime: r.periodTime || '',
               subject: r.subject || '',
               room: r.room || '',
-              substituteTeacher: r.substituteTeacher || ''
+              substituteTeacher: r.substituteTeacher || '',
+              isSelf: Boolean(r.isSelf)
             };
           } else {
             item.periods[r.periodId].substituteTeacher = r.substituteTeacher || '';
+            item.periods[r.periodId].isSelf = Boolean(r.isSelf);
             if (r.subject) item.periods[r.periodId].subject = r.subject;
             if (r.room) item.periods[r.periodId].room = r.room;
             if (r.periodTime) item.periods[r.periodId].periodTime = r.periodTime;
@@ -303,10 +305,12 @@
               periodTime: r.periodTime || '',
               subject: r.subject || '',
               room: r.room || '',
-              substituteTeacher: r.substituteTeacher || ''
+              substituteTeacher: r.substituteTeacher || '',
+              isSelf: Boolean(r.isSelf)
             };
           } else {
             item.periods[r.periodId].substituteTeacher = r.substituteTeacher || '';
+            item.periods[r.periodId].isSelf = Boolean(r.isSelf);
             if (r.subject) item.periods[r.periodId].subject = r.subject;
             if (r.room) item.periods[r.periodId].room = r.room;
             if (r.periodTime) item.periods[r.periodId].periodTime = r.periodTime;
@@ -353,7 +357,8 @@
           periodTime: p.periodTime || '',
           subject: p.subject || '',
           room: p.room || '',
-          substituteTeacher: p.substituteTeacher || ''
+          substituteTeacher: p.substituteTeacher || '',
+          isSelf: Boolean(p.isSelf)
         });
       });
     } else {
@@ -732,7 +737,8 @@
               periodTime: period.time || "",
               subject: parsed.subject || "",
               room: parsed.room || "",
-              substituteTeacher: (previousPeriods[period.id] && previousPeriods[period.id].substituteTeacher) || ""
+              substituteTeacher: (previousPeriods[period.id] && previousPeriods[period.id].substituteTeacher) || "",
+              isSelf: Boolean(previousPeriods[period.id] && previousPeriods[period.id].isSelf)
             };
           }
         }
@@ -820,9 +826,18 @@
                 `).join('')}
               </div>
 
-              <span class="text-xs px-2.5 py-1 rounded-lg font-bold shrink-0 ${hasPeriods ? (item.isSaved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/80' : 'bg-indigo-50 text-indigo-700 border border-indigo-200/80') : 'bg-slate-100 text-slate-500 border border-slate-200/80'}">
-                ${hasPeriods ? `มีสอน ${Object.keys(item.periods).length} คาบ` : 'ไม่มีคาบสอน'}
-              </span>
+              ${(() => {
+                const totalP = Object.keys(itemPeriods).length;
+                const selfP = Object.values(itemPeriods).filter(p => p && p.isSelf).length;
+                const leaveP = totalP - selfP;
+                if (!hasPeriods) {
+                  return `<span class="text-xs px-2.5 py-1 rounded-lg font-bold shrink-0 bg-slate-100 text-slate-500 border border-slate-200/80">ไม่มีคาบสอน</span>`;
+                }
+                if (selfP > 0) {
+                  return `<span class="text-xs px-2.5 py-1 rounded-lg font-bold shrink-0 bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">มีสอน ${totalP} คาบ (ลา ${leaveP} • สอนเอง ${selfP})</span>`;
+                }
+                return `<span class="text-xs px-2.5 py-1 rounded-lg font-bold shrink-0 ${item.isSaved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/80' : 'bg-indigo-50 text-indigo-700 border border-indigo-200/80'}">มีสอน ${totalP} คาบ</span>`;
+              })()}
 
               <button class="btn-print-single btn-press text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-50 transition-colors cursor-pointer shrink-0"
                 data-teacher="${item.teacherName}" title="ดูตัวอย่าง & สั่งพิมพ์เฉพาะคุณครู ${item.teacherName}">
@@ -846,63 +861,102 @@
               <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5">
                 ${Object.values(itemPeriods).map(period => {
                   const availableTeachers = getAvailableTeachersForPeriod(dayName, period.periodId, item.teacherName);
-                  const isAssigned = Boolean(period.substituteTeacher && period.substituteTeacher.trim());
+                  const isSelf = Boolean(period.isSelf);
+                  const isAssigned = !isSelf && Boolean(period.substituteTeacher && period.substituteTeacher.trim());
                   const freeCount = availableTeachers.filter(t => t.isFree).length;
 
+                  let cardBorderClass = 'border-slate-200/80 bg-white/80 hover-lift-sm hover:border-slate-300';
+                  let headerBorderClass = 'border-slate-200/70';
+                  let periodBadgeClass = 'bg-slate-800 text-white';
+                  let timeClass = 'text-slate-400 font-medium';
+                  let selfBtnClass = 'bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 shadow-2xs';
+                  let freeBadgeClass = 'text-emerald-600 bg-emerald-50 border border-emerald-200/50';
+
+                  if (isSelf) {
+                    cardBorderClass = 'border-emerald-400 bg-emerald-50/70 ring-2 ring-emerald-400/40 shadow-xs';
+                    headerBorderClass = 'border-emerald-200/80';
+                    periodBadgeClass = 'bg-emerald-600 text-white';
+                    timeClass = 'text-emerald-800 font-semibold';
+                    selfBtnClass = 'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs font-black';
+                    freeBadgeClass = 'text-emerald-700 bg-emerald-100/70 border border-emerald-300/50';
+                  } else if (isAssigned) {
+                    cardBorderClass = 'border-amber-400 bg-amber-50/70 ring-2 ring-amber-300/50 shadow-xs';
+                    headerBorderClass = 'border-amber-200/80';
+                    periodBadgeClass = 'bg-gradient-to-r from-amber-500 to-orange-500 text-white';
+                    timeClass = 'text-amber-900/80 font-medium';
+                    selfBtnClass = 'bg-white hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-300 hover:border-emerald-300 shadow-2xs';
+                    freeBadgeClass = 'text-amber-800 bg-amber-100/80 border border-amber-300/70';
+                  }
+
                   return `
-                    <div class="bg-white/80 border ${isAssigned ? 'border-emerald-400/90 bg-emerald-50/30 ring-1 ring-emerald-300/40 shadow-xs' : 'border-slate-200/80'} rounded-xl p-2.5 flex flex-col justify-between gap-1.5 transition-all hover-lift-sm hover:border-slate-300">
+                    <div class="${cardBorderClass} rounded-xl p-2.5 flex flex-col justify-between gap-1.5 transition-all">
                       
-                      <!-- Row 1: คาบ & เวลา + จำนวนครูว่าง -->
-                      <div class="flex items-center justify-between text-xs pb-1 border-b ${isAssigned ? 'border-emerald-200/70' : 'border-slate-200/70'}">
-                        <div class="flex items-center gap-1.5">
-                          <span class="px-1.5 py-0.5 rounded-md text-[11px] font-bold ${isAssigned ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white' : 'bg-slate-800 text-white'} shadow-2xs">
+                      <!-- Row 1: คาบ & เวลา + (สอนเอง) + จำนวนครูว่าง -->
+                      <div class="flex items-center justify-between text-xs pb-1 border-b ${headerBorderClass}">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                          <span class="px-1.5 py-0.5 rounded-md text-[11px] font-bold ${periodBadgeClass} shadow-2xs shrink-0">
                             ${period.periodName}
                           </span>
-                          <span class="text-[10px] text-slate-400 font-medium">${period.periodTime}</span>
+                          <span class="text-[10px] ${timeClass} truncate">${period.periodTime}</span>
                         </div>
-                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${isAssigned ? 'text-emerald-700 bg-emerald-100/70 border border-emerald-300/50' : 'text-emerald-600 bg-emerald-50 border border-emerald-200/50'}">
-                          ว่าง ${freeCount}
-                        </span>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          <button type="button" 
+                            class="btn-toggle-self btn-press px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all cursor-pointer flex items-center gap-1 ${selfBtnClass}"
+                            data-index="${index}" data-period="${period.periodId}"
+                            title="${isSelf ? 'คลิกเพื่อยกเลิกสถานะสอนเอง (กลับสู่การจัดสอนแทนตามปกติ)' : 'คลิกเพื่อตั้งค่าเป็นสอนเอง (ไม่จัดสอนแทน และไม่หักสถิติลา)'}">
+                            ${isSelf ? '<i data-lucide="check" class="w-3 h-3 stroke-[3]"></i><span>สอนเอง</span>' : '<span>สอนเอง</span>'}
+                          </button>
+                          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${freeBadgeClass}">
+                            ว่าง ${freeCount}
+                          </span>
+                        </div>
                       </div>
 
                       <!-- Row 2: วิชา และ ห้องเรียน (compact inline inputs) -->
                       <div class="flex items-center gap-1.5 text-xs">
                         <input type="text" value="${period.subject || ''}" placeholder="วิชา..." 
-                          class="period-subject-input flex-1 min-w-0 font-bold text-slate-800 bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-500 rounded-lg px-2 py-0.5 outline-none transition-all text-xs"
+                          class="period-subject-input flex-1 min-w-0 font-bold ${isSelf ? 'text-emerald-950 bg-white/90 border-emerald-300' : (isAssigned ? 'text-amber-950 bg-white border-amber-300 focus:border-amber-500' : 'text-slate-800 bg-slate-50/70 hover:bg-white border-slate-200 focus:border-indigo-500')} focus:bg-white border hover:border-slate-300 rounded-lg px-2 py-0.5 outline-none transition-all text-xs"
                           data-index="${index}" data-period="${period.periodId}" title="${period.subject || ''}">
                         <input type="text" value="${period.room || ''}" placeholder="ห้อง..." 
-                          class="period-room-input w-20 text-slate-600 bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-500 rounded-lg px-1.5 py-0.5 outline-none transition-all text-[11px] text-center"
+                          class="period-room-input w-20 ${isSelf ? 'text-emerald-800 bg-white/90 border-emerald-300' : (isAssigned ? 'text-amber-900 bg-white border-amber-300 focus:border-amber-500' : 'text-slate-600 bg-slate-50/70 hover:bg-white border-slate-200 focus:border-indigo-500')} focus:bg-white border hover:border-slate-300 rounded-lg px-1.5 py-0.5 outline-none transition-all text-[11px] text-center"
                           data-index="${index}" data-period="${period.periodId}" title="${period.room || 'ห้องเรียน'}">
                       </div>
 
                       <!-- Row 3: เลือกครูสอนแทน -->
                       <div>
-                        <select class="substitute-select w-full ${isAssigned ? 'bg-emerald-100/70 border-emerald-400 text-emerald-900 font-bold' : 'bg-slate-50/70 hover:bg-white border-slate-300/90 text-slate-800 font-medium'} border rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs transition-all"
-                          data-index="${index}" data-period="${period.periodId}">
-                          <option value="">-- เลือกครูสอนแทน --</option>
-                          <optgroup label="ครูที่ว่างในคาบนี้ (ว่าง ${freeCount} ท่าน)">
-                            ${availableTeachers.filter(t => t.isFree).map(t => {
-                              const gradeName = (gradesMap && gradesMap[t.name]) || t.grade || '';
-                              const g = gradeName ? ` [${gradeName}]` : '';
-                              return `
-                                <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
-                                  ${t.name}${g} (ว่าง ${t.freePeriodsCount} คาบ)
-                                </option>
-                              `;
-                            }).join('')}
-                          </optgroup>
-                          <optgroup label="ครูที่มีคาบสอนอื่น">
-                            ${availableTeachers.filter(t => !t.isFree).map(t => {
-                              const gradeName = (gradesMap && gradesMap[t.name]) || t.grade || '';
-                              const g = gradeName ? ` [${gradeName}]` : '';
-                              return `
-                                <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
-                                  ⚠️ ${t.name}${g} (${t.busyWith})
-                                </option>
-                              `;
-                            }).join('')}
-                          </optgroup>
-                        </select>
+                        ${isSelf ? `
+                          <select disabled class="substitute-select w-full bg-emerald-100/70 border border-emerald-300 text-emerald-800 font-bold rounded-lg px-2 py-1 text-xs outline-none cursor-not-allowed opacity-90 shadow-2xs"
+                            data-index="${index}" data-period="${period.periodId}" title="คาบนี้ตั้งค่าเป็น 'สอนเอง' เรียบร้อยแล้ว (ไม่สามารถเลือกครูสอนแทนได้จนกว่าจะกดปุ่มสอนเองออก)">
+                            <option value="" selected>-- สอนเอง (ไม่จัดสอนแทน) --</option>
+                          </select>
+                        ` : `
+                          <select class="substitute-select w-full ${isAssigned ? 'bg-amber-100/80 border-amber-400 text-amber-950 font-bold focus:ring-amber-500' : 'bg-slate-50/70 hover:bg-white border-slate-300/90 text-slate-800 font-medium focus:ring-indigo-500'} border rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 cursor-pointer shadow-2xs transition-all"
+                            data-index="${index}" data-period="${period.periodId}">
+                            <option value="">-- เลือกครูสอนแทน --</option>
+                            <optgroup label="ครูที่ว่างในคาบนี้ (ว่าง ${freeCount} ท่าน)">
+                              ${availableTeachers.filter(t => t.isFree).map(t => {
+                                const gradeName = (gradesMap && gradesMap[t.name]) || t.grade || '';
+                                const g = gradeName ? ` [${gradeName}]` : '';
+                                return `
+                                  <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
+                                    ${t.name}${g} (ว่าง ${t.freePeriodsCount} คาบ)
+                                  </option>
+                                `;
+                              }).join('')}
+                            </optgroup>
+                            <optgroup label="ครูที่มีคาบสอนอื่น">
+                              ${availableTeachers.filter(t => !t.isFree).map(t => {
+                                const gradeName = (gradesMap && gradesMap[t.name]) || t.grade || '';
+                                const g = gradeName ? ` [${gradeName}]` : '';
+                                return `
+                                  <option value="${t.name}" ${period.substituteTeacher === t.name ? 'selected' : ''}>
+                                    ⚠️ ${t.name}${g} (${t.busyWith})
+                                  </option>
+                                `;
+                              }).join('')}
+                            </optgroup>
+                          </select>
+                        `}
                       </div>
 
                     </div>
@@ -1091,6 +1145,26 @@
       });
     });
 
+    container.querySelectorAll('.btn-toggle-self').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.index);
+        const pid = parseInt(btn.dataset.period);
+        if (absentTeachersList[idx] && absentTeachersList[idx].periods && absentTeachersList[idx].periods[pid]) {
+          const p = absentTeachersList[idx].periods[pid];
+          p.isSelf = !p.isSelf;
+          if (p.isSelf) {
+            // เมื่อเลือกสอนเอง ให้เคลียร์ครูสอนแทนออก (เพราะครูสอนเอง ไม่ต้องมีครูสอนแทน)
+            p.substituteTeacher = '';
+          }
+          absentTeachersList[idx].isSaved = false;
+          renderAbsentTeachersCards();
+          updateTeacherSaveButtonStatus(idx);
+        }
+      });
+    });
+
     if (window.lucide) window.lucide.createIcons();
   }
 
@@ -1188,7 +1262,8 @@
             periodTime: p.periodTime || '',
             subject: p.subject || '',
             room: p.room || '',
-            substituteTeacher: p.substituteTeacher || ''
+            substituteTeacher: p.substituteTeacher || '',
+          isSelf: Boolean(p.isSelf)
           });
         });
       } else {
@@ -1333,7 +1408,7 @@
     const settings = cachedSettings;
     const periodTimes = new Map((Array.isArray(cachedPeriods) ? cachedPeriods : [])
       .map(period => [Number(period.id), period.time || '']));
-    const getDocumentPeriodTime = periodId => periodTimes.get(periodId) || '';
+    const getDocumentPeriodTime = periodId => (periodTimes.get(periodId) || '').replace(/\.{2,}/g, '.');
 
     let items;
     if (customItems !== undefined) {
@@ -1411,11 +1486,11 @@
 
             <div class="text-[14.5px] mt-2.5 leading-[1.5] space-y-1">
               <div class="flex items-baseline">
-                <span class="w-16 font-bold shrink-0">เรื่อง</span>
+                <span class="font-bold shrink-0" style="width: 15mm; min-width: 15mm;">เรื่อง</span>
                 <span class="doc-subject-text flex-1 outline-none hover:bg-amber-50/70 focus:bg-amber-50/70 rounded transition-colors" contenteditable="true" title="คลิกเพื่อพิมพ์แก้ไขข้อความหัวข้อเรื่องได้โดยตรง">${pageDocSubject}</span>
               </div>
               <div class="flex items-baseline">
-                <span class="w-16 font-bold shrink-0">เรียน</span>
+                <span class="font-bold shrink-0" style="width: 15mm; min-width: 15mm;">เรียน</span>
                 <span class="flex-1">${settings.docDear}</span>
               </div>
             </div>
@@ -1447,6 +1522,22 @@
 
             <div class="mt-2.5 space-y-3">
               ${pageTeachers.map((t) => {
+                const getPeriodSubCell = (pId) => {
+                  const p = t.periods && t.periods[pId];
+                  if (!p) return '';
+                  if (p.isSelf) {
+                    return '<span style="font-size: 10px; font-weight: normal; color: #475569;">(สอนเอง)</span>';
+                  }
+                  return formatTeacherNameForTable(p.substituteTeacher || '');
+                };
+                const getPeriodAckCell = (pId) => {
+                  const p = t.periods && t.periods[pId];
+                  if (p && p.isSelf) {
+                    return '<div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 52px; font-size: 11px; color: #94a3b8;">-</div>';
+                  }
+                  return '';
+                };
+
                 return `
                   <table class="gov-table" style="table-layout: fixed; width: 100%;">
                     <tbody>
@@ -1552,32 +1643,32 @@
                         </td>
                         <td style="height: 38px;">
                           <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
-                            ${formatTeacherNameForTable((t.periods && t.periods[1]) ? t.periods[1].substituteTeacher : '')}
+                            ${getPeriodSubCell(1)}
                           </div>
                         </td>
                         <td style="height: 38px;">
                           <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
-                            ${formatTeacherNameForTable((t.periods && t.periods[2]) ? t.periods[2].substituteTeacher : '')}
+                            ${getPeriodSubCell(2)}
                           </div>
                         </td>
                         <td style="height: 38px;">
                           <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
-                            ${formatTeacherNameForTable((t.periods && t.periods[3]) ? t.periods[3].substituteTeacher : '')}
+                            ${getPeriodSubCell(3)}
                           </div>
                         </td>
                         <td style="height: 38px;">
                           <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
-                            ${formatTeacherNameForTable((t.periods && t.periods[5]) ? t.periods[5].substituteTeacher : '')}
+                            ${getPeriodSubCell(5)}
                           </div>
                         </td>
                         <td style="height: 38px;">
                           <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
-                            ${formatTeacherNameForTable((t.periods && t.periods[6]) ? t.periods[6].substituteTeacher : '')}
+                            ${getPeriodSubCell(6)}
                           </div>
                         </td>
                         <td style="height: 38px;">
                           <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
-                            ${formatTeacherNameForTable((t.periods && t.periods[7]) ? t.periods[7].substituteTeacher : '')}
+                            ${getPeriodSubCell(7)}
                           </div>
                         </td>
                       </tr>
@@ -1587,12 +1678,12 @@
                             รับทราบ
                           </div>
                         </td>
-                        <td style="height: 52px;"></td>
-                        <td style="height: 52px;"></td>
-                        <td style="height: 52px;"></td>
-                        <td style="height: 52px;"></td>
-                        <td style="height: 52px;"></td>
-                        <td style="height: 52px;"></td>
+                        <td style="height: 52px;">${getPeriodAckCell(1)}</td>
+                        <td style="height: 52px;">${getPeriodAckCell(2)}</td>
+                        <td style="height: 52px;">${getPeriodAckCell(3)}</td>
+                        <td style="height: 52px;">${getPeriodAckCell(5)}</td>
+                        <td style="height: 52px;">${getPeriodAckCell(6)}</td>
+                        <td style="height: 52px;">${getPeriodAckCell(7)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1673,6 +1764,7 @@
     const drawerCountBadge = document.getElementById('pdf-drawer-count-badge');
     const btnPrintNow = document.getElementById('btn-print-now');
     const btnSavePdf = document.getElementById('btn-save-pdf');
+    const btnSaveImage = document.getElementById('btn-save-image');
 
     if (!previewBody) return;
 
@@ -1689,6 +1781,10 @@
       if (btnSavePdf) {
         btnSavePdf.disabled = false;
         btnSavePdf.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+      if (btnSaveImage) {
+        btnSaveImage.disabled = false;
+        btnSaveImage.classList.remove('opacity-50', 'cursor-not-allowed');
       }
       if (window.lucide) window.lucide.createIcons();
       return;
@@ -1720,6 +1816,11 @@
       btnSavePdf.disabled = isDisabled;
       btnSavePdf.classList.toggle('opacity-50', isDisabled);
       btnSavePdf.classList.toggle('cursor-not-allowed', isDisabled);
+    }
+    if (btnSaveImage) {
+      btnSaveImage.disabled = isDisabled;
+      btnSaveImage.classList.toggle('opacity-50', isDisabled);
+      btnSaveImage.classList.toggle('cursor-not-allowed', isDisabled);
     }
 
     const html = generateOfficialDocumentPagesHtml(selectedItems);
@@ -1880,6 +1981,114 @@
         renderPdfTeacherSelectorUI();
       });
     });
+
+    const btnSaveImage = document.getElementById('btn-save-image');
+    if (btnSaveImage && !btnSaveImage.dataset.hasListener) {
+      btnSaveImage.dataset.hasListener = "true";
+      btnSaveImage.addEventListener('click', saveOfficialDocumentAsImage);
+    }
+  }
+
+  async function saveOfficialDocumentAsImage() {
+    const previewContent = document.getElementById('pdf-preview-content');
+    if (!previewContent) return;
+
+    const pages = previewContent.querySelectorAll('.a4-page-preview');
+    if (pages.length === 0) {
+      showToast("ไม่พบหน้าเอกสารสำหรับบันทึกภาพ", "warning");
+      return;
+    }
+
+    const btnSaveImg = document.getElementById('btn-save-image');
+    const originalHtml = btnSaveImg ? btnSaveImg.innerHTML : '';
+    if (btnSaveImg) {
+      btnSaveImg.disabled = true;
+      btnSaveImg.classList.add('opacity-75');
+      btnSaveImg.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>กำลังบันทึกภาพ...</span>`;
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    try {
+      if (typeof html2canvas === 'undefined') {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error('ไม่สามารถโหลดโมดูลสร้างภาพได้ กรุณาเชื่อมต่ออินเทอร์เน็ต'));
+          document.head.appendChild(script);
+        });
+      }
+
+      const dateInfo = formatThaiDate(currentDate);
+      const thaiDateSlug = `${dateInfo.day}_${dateInfo.month}_${dateInfo.year}`;
+
+      for (let i = 0; i < pages.length; i++) {
+        const pageElem = pages[i];
+
+        const canvas = await html2canvas(pageElem, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          onclone: (clonedDoc) => {
+            clonedDoc.querySelectorAll('.a4-page-preview').forEach(p => {
+              p.style.boxShadow = 'none';
+              p.style.margin = '0 auto';
+            });
+            clonedDoc.querySelectorAll('.gov-table').forEach(table => {
+              table.style.border = '1px solid #000000';
+              table.style.borderCollapse = 'collapse';
+            });
+            clonedDoc.querySelectorAll('.cell-lunch-break').forEach(th => {
+              th.style.border = '1px solid #000000';
+              th.style.borderTop = '1px solid #000000';
+            });
+          }
+        });
+
+        const fileName = pages.length > 1 
+          ? `ตารางสอนแทน_${thaiDateSlug}_หน้า${i + 1}.png` 
+          : `ตารางสอนแทน_${thaiDateSlug}.png`;
+
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = canvas.toDataURL('image/png');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        if (i === 0 && navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+          try {
+            canvas.toBlob(blob => {
+              if (blob) {
+                navigator.clipboard.write([
+                  new ClipboardItem({ 'image/png': blob })
+                ]).catch(() => {});
+              }
+            }, 'image/png');
+          } catch (e) {}
+        }
+
+        if (i < pages.length - 1) {
+          await new Promise(r => setTimeout(r, 400));
+        }
+      }
+
+      showToast(`บันทึกรูปภาพสำเร็จ (${pages.length} หน้า) พร้อมส่งเข้าไลน์กลุ่มแล้วครับ!`);
+    } catch (err) {
+      console.error("Save image error:", err);
+      showToast("เกิดข้อผิดพลาดในการบันทึกภาพ: " + (err.message || err), "error");
+    } finally {
+      if (btnSaveImg) {
+        btnSaveImg.disabled = false;
+        btnSaveImg.classList.remove('opacity-75');
+        btnSaveImg.innerHTML = originalHtml;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
   }
 
   function openPdfPreviewModal(initialSelectedNames) {

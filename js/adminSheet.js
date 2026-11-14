@@ -2910,7 +2910,10 @@
         // 1. คาบที่ครูท่านนี้ลา (ขาดการสอนตามตาราง)
         const absent = String(r.absentTeacher || '').trim();
         if (absent === cleanName) {
-          leavePeriods++;
+          // หากตั้งสถานะเป็น "สอนเอง" (isSelf) จะไม่นับเป็นคาบลา
+          if (!r.isSelf && !r.isSelfTaught) {
+            leavePeriods++;
+          }
         }
 
         // 2. คาบที่ครูท่านนี้ไปสอนแทนครูท่านอื่น

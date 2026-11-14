@@ -634,6 +634,7 @@
               subject: data.subject,
               room: data.room,
               substituteTeacher: data.substituteTeacher,
+              isSelf: Boolean(data.isSelf),
               notes: data.notes || '',
               createdAt: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toISOString() : data.createdAt) : new Date().toISOString()
             });
@@ -707,6 +708,7 @@
         subject: rec.subject || '',
         room: rec.room || '',
         substituteTeacher: rec.substituteTeacher || '',
+        isSelf: Boolean(rec.isSelf),
         notes: rec.notes || '',
         createdAt: new Date().toISOString()
       };
