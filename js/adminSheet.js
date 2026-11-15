@@ -1053,7 +1053,7 @@
             }).join('')}
           </div>
 
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="admin-sheet-actions flex flex-wrap items-center gap-2 w-full md:w-auto">
             ${isSheetEditMode ? `
               <!-- ปุ่มบันทึกข้อมูล (โหมดแก้ไข: เด่นชัด สีเขียวมรกต) -->
               <button id="btn-save-all-data" 
@@ -1731,9 +1731,9 @@
           </button>
         </div>
 
-        <!-- Single-row Grid Cards (7 คาบในแถวเดียวกัน) -->
+        <!-- Single-row Grid Cards (7 คาบในแถวเดียวกันบนจอคอม / การ์ด 2 คอลัมน์บนมือถือ) -->
         <div class="overflow-x-auto pb-3 sheet-scroll -mx-1 px-1">
-          <div class="grid gap-2.5 sm:gap-3 min-w-[920px] 2xl:min-w-0" style="grid-template-columns: repeat(${activePeriods.length}, minmax(0, 1fr));">
+          <div class="admin-periods-grid grid gap-2.5 sm:gap-3 min-w-[920px] 2xl:min-w-0" style="grid-template-columns: repeat(${activePeriods.length}, minmax(0, 1fr));">
             ${activePeriods.map((p, idx) => `
               <div class="glass-card-subtle hover-lift-sm rounded-2xl p-3 border transition-all flex flex-col justify-between gap-3 shadow-2xs ${p.isBreak ? 'border-amber-300/90 bg-amber-50/50 ring-1 ring-amber-300/40' : 'border-slate-200/90 bg-white/95'}">
                 
@@ -1849,8 +1849,8 @@
           </div>
 
           <!-- Teachers Table -->
-          <div class="overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-2xs sheet-scroll">
-            <table class="w-full text-xs text-left">
+          <div class="admin-teachers-grade-wrap overflow-x-auto border border-slate-200/80 rounded-2xl bg-white shadow-2xs sheet-scroll">
+            <table class="admin-teachers-grade-table w-full text-xs text-left">
               <thead class="bg-slate-100/90 text-slate-700 font-bold border-b border-slate-200/80">
                 <tr>
                   <th class="py-2.5 px-3 text-center w-14">ลำดับ</th>
@@ -3145,9 +3145,9 @@
           </form>
 
           <!-- ตารางแสดงรายการวันหยุด -->
-          <div class="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs">
-            <div class="overflow-x-auto max-h-80 overflow-y-auto">
-              <table class="w-full text-left text-xs border-collapse">
+          <div class="admin-holidays-wrap border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs">
+            <div class="overflow-x-auto max-h-[420px] sm:max-h-80 overflow-y-auto">
+              <table class="admin-holidays-table w-full text-left text-xs border-collapse">
                 <thead class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold sticky top-0 z-10">
                   <tr>
                     <th class="py-3 px-3 text-center w-12">ลำดับ</th>
@@ -3586,22 +3586,22 @@
             </div>
 
             <!-- Toolbar: กรองช่วงชั้น & จัดเรียง & ค้นหา -->
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="admin-load-toolbar flex flex-wrap items-center gap-2 w-full lg:w-auto">
               <!-- Filter ช่วงชั้น -->
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 flex-1 sm:flex-initial min-w-[130px]">
                 <span class="text-xs font-bold text-slate-500 hidden sm:inline">ช่วงชั้น:</span>
                 <select id="load-filter-grade"
-                  class="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs">
+                  class="w-full sm:w-auto px-2.5 py-2 sm:py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs">
                   <option value="ALL" ${calendarTeacherGradeFilter === 'ALL' ? 'selected' : ''}>ช่วงชั้นทั้งหมด</option>
                   ${GRADE_BANDS.map(b => `<option value="${b.key}" ${calendarTeacherGradeFilter === b.key ? 'selected' : ''}>${b.key}</option>`).join('')}
                 </select>
               </div>
 
               <!-- เรียงลำดับ -->
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 flex-1 sm:flex-initial min-w-[150px]">
                 <span class="text-xs font-bold text-slate-500 hidden sm:inline">เรียงตาม:</span>
                 <select id="load-sort-load"
-                  class="px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs">
+                  class="w-full sm:w-auto px-2.5 py-2 sm:py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs">
                   <option value="default" ${calendarSortOrder === 'default' ? 'selected' : ''}>ตามลำดับรายชื่อ</option>
                   <option value="desc" ${calendarSortOrder === 'desc' ? 'selected' : ''}>คาบสอนจริงมาก ➔ น้อย</option>
                   <option value="asc" ${calendarSortOrder === 'asc' ? 'selected' : ''}>คาบสอนจริงน้อย ➔ มาก</option>
@@ -3609,10 +3609,10 @@
               </div>
 
               <!-- ค้นหาชื่อครู -->
-              <div class="relative">
+              <div class="relative w-full sm:w-auto">
                 <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
-                <input type="text" id="load-search-teacher" value="${calendarTeacherSearch}" placeholder="ค้นหาชื่อคุณครู..."
-                  class="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs w-36 sm:w-44">
+                <input type="text" id="load-search-teacher" value="${escapeAttr(calendarTeacherSearch)}" placeholder="ค้นหาชื่อคุณครู..."
+                  class="pl-8 pr-3 py-2 sm:py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 shadow-2xs w-full sm:w-44">
               </div>
             </div>
           </div>

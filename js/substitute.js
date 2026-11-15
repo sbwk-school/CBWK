@@ -840,15 +840,15 @@
         <div class="absent-teacher-card glass-card hover-lift border ${item.isSaved ? 'border-emerald-300/80 ring-1 ring-emerald-400/20' : 'border-slate-200/80'} rounded-2xl shadow-xs overflow-hidden transition-all">
           
           <!-- Compact Top Bar -->
-          <div class="${item.isSaved ? 'bg-emerald-50/50' : 'bg-slate-50/90'} px-3.5 py-2.5 border-b ${item.isSaved ? 'border-emerald-200/80' : 'border-slate-200/80'} flex flex-wrap items-center justify-between gap-2.5">
+          <div class="absent-card-topbar ${item.isSaved ? 'bg-emerald-50/50' : 'bg-slate-50/90'} px-3 sm:px-3.5 py-2.5 border-b ${item.isSaved ? 'border-emerald-200/80' : 'border-slate-200/80'} flex flex-wrap items-center justify-between gap-2 sm:gap-2.5">
             
             <!-- Left: ครูที่ลา & ปุ่มบันทึกสถานะ -->
-            <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <div class="absent-card-topbar-left flex items-center gap-1.5 sm:gap-2 flex-nowrap w-full sm:w-auto">
               <span class="w-6 h-6 flex items-center justify-center ${item.isSaved ? 'bg-gradient-to-tr from-emerald-500 to-emerald-600 shadow-xs shadow-emerald-500/25' : 'bg-gradient-to-tr from-indigo-500 to-blue-600 shadow-xs shadow-indigo-500/25'} text-white rounded-lg text-xs font-bold shrink-0">
                 ${index + 1}
               </span>
-              <span class="text-xs font-bold text-slate-600 whitespace-nowrap">ครูที่ลา:</span>
-              <select class="absent-teacher-select bg-white border border-slate-300/90 rounded-xl px-2.5 py-1 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs w-48 sm:w-56 cursor-pointer"
+              <span class="text-xs font-bold text-slate-600 whitespace-nowrap hidden xs:inline sm:inline">ครูที่ลา:</span>
+              <select class="absent-teacher-select bg-white border border-slate-300/90 rounded-xl px-2 sm:px-2.5 py-1 text-xs sm:text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs flex-1 min-w-0 sm:flex-initial sm:w-56 cursor-pointer"
                 data-index="${index}">
                 ${teacherList.map(t => {
                   const g = gradesMap[t] ? ` [${gradesMap[t]}]` : '';
@@ -874,7 +874,7 @@
             </div>
 
             <!-- Right: ประเภทการลา & สรุปคาบ & ปุ่มลบ -->
-            <div class="flex items-center gap-2 sm:gap-2.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end">
+            <div class="absent-card-topbar-right flex items-center gap-1.5 sm:gap-2.5 flex-wrap sm:flex-nowrap justify-between sm:justify-end w-full sm:w-auto">
               <!-- Leave Type Segmented Control -->
               <div class="inline-flex bg-slate-200/60 p-0.5 rounded-xl text-xs font-semibold">
                 ${['ไปราชการ', 'ลากิจ', 'ลาป่วย'].map(type => `
@@ -2160,6 +2160,7 @@
         pageClone.style.boxShadow = 'none';
         pageClone.style.margin = '0 auto';
         pageClone.style.transform = 'none';
+        pageClone.style.zoom = '1';
         pageClone.style.width = '210mm';
         pageClone.style.height = '297mm';
         pageClone.style.maxHeight = '297mm';
@@ -2353,6 +2354,7 @@
         pageClone.style.boxShadow = 'none';
         pageClone.style.margin = '0 auto';
         pageClone.style.transform = 'none';
+        pageClone.style.zoom = '1';
         pageClone.style.width = '210mm';
         pageClone.style.height = '297mm';
         pageClone.style.maxHeight = '297mm';
