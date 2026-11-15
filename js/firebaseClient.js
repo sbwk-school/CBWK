@@ -748,21 +748,28 @@
       }
     }
 
-    // 4. จัดการใน LocalStorage: ลบข้อมูลเดิมของ (date + absentTeacher) ออก แล้วแทนที่ด้วยชุดใหม่
-    const current = await getSubstitutions();
+    // 4. จัดการใน LocalStorage: ลบข้อมูลเดิมของ (date + absentTeacher) ออก แล้วแทนที่ด้วยชุดใหม่โดยไม่ต้องดึง Firestore 1000 รายการซ้ำ
+    const current = getLocalSubstitutionsCached();
     const oldFiltered = current.filter(r => !seenPairs.has(`${r.date}__${String(r.absentTeacher || '').trim()}`));
     const updated = [...newRecordsWithId, ...oldFiltered];
     const { cleanList } = deduplicateSubstitutions(updated);
-    localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(cleanList));
+    try {
+      localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(cleanList));
+    } catch (e) {}
 
     return cleanList;
   }
 
-  async function deleteSubstitution(id) {
-    const current = await getSubstitutions();
-    const updated = current.filter(r => r.id !== id);
-    localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(updated));
+  function getLocalSubstitutionsCached() {
+    try {
+      const local = localStorage.getItem(STORAGE_KEYS.SUBSTITUTIONS);
+      return local ? JSON.parse(local) : [];
+    } catch (e) {
+      return [];
+    }
+  }
 
+  async function deleteSubstitution(id) {
     if (firestoreDb) {
       try {
         await firestoreDb.collection('substitutions').doc(id).delete();
@@ -770,15 +777,17 @@
         console.warn("Firestore delete substitution error:", e);
       }
     }
+    const current = getLocalSubstitutionsCached();
+    const updated = current.filter(r => r.id !== id);
+    try {
+      localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(updated));
+    } catch (e) {}
     return updated;
   }
 
   async function deleteSubstitutionsBatch(ids) {
-    if (!ids || ids.length === 0) return await getSubstitutions();
+    if (!ids || ids.length === 0) return getLocalSubstitutionsCached();
     const idSet = new Set(ids);
-    const current = await getSubstitutions();
-    const updated = current.filter(r => !idSet.has(r.id));
-    localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(updated));
 
     if (firestoreDb) {
       try {
@@ -791,6 +800,12 @@
         console.warn("Firestore batch delete substitutions error:", e);
       }
     }
+
+    const current = getLocalSubstitutionsCached();
+    const updated = current.filter(r => !idSet.has(r.id));
+    try {
+      localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(updated));
+    } catch (e) {}
     return updated;
   }
 
@@ -816,9 +831,11 @@
       }
     }
 
-    const current = await getSubstitutions();
+    const current = getLocalSubstitutionsCached();
     const updated = current.filter(r => !(r.date === date && String(r.absentTeacher || '').trim() === cleanTeacher));
-    localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(updated));
+    try {
+      localStorage.setItem(STORAGE_KEYS.SUBSTITUTIONS, JSON.stringify(updated));
+    } catch (e) {}
     return updated;
   }
 

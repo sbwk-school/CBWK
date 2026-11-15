@@ -55,6 +55,14 @@
     return 99;
   }
 
+  function escapeAttr(val) {
+    return String(val ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   function toLocalISODate(d) {
     if (!d || !(d instanceof Date) || isNaN(d.getTime())) {
       d = new Date();
@@ -190,7 +198,15 @@
             if (!hasUnsavedItems) {
               loadSavedSubstitutionsForCurrentDate();
             }
-            renderSubstituteUI();
+            const activeEl = document.activeElement;
+            const isTypingInSub = activeEl && container.contains(activeEl) && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT' || activeEl.tagName === 'TEXTAREA');
+            const calEl = document.getElementById('sub-date-calendar');
+            const isCalOpen = calEl && !calEl.hidden;
+            if (!isTypingInSub && !isCalOpen) {
+              renderSubstituteUI();
+            } else {
+              renderAbsentTeachersCards();
+            }
           }
         } catch (cloudErr) {
           console.warn("Background cloud sync note:", cloudErr.message || cloudErr);
@@ -452,6 +468,18 @@
               </div>
             </div>
 
+            ${(currentDate.getDay() === 0 || currentDate.getDay() === 6) ? `
+              <div class="mt-4 p-3 bg-amber-50 border border-amber-200/90 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="calendar-clock" class="w-4 h-4 text-amber-600 shrink-0"></i>
+                  <span>วันที่เลือกตรงกับ<strong>วัน${dateInfo.dayOfWeek}</strong> (วันหยุดสุดสัปดาห์ ไม่มีตารางสอนปกติ) หากต้องการจัดสอนแทนล่วงหน้าสามารถสลับไปวันจันทร์ได้ทันที</span>
+                </div>
+                <button type="button" id="btn-jump-next-monday" class="btn-press px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-colors cursor-pointer shrink-0">
+                  ไปที่วันจันทร์ถัดไป ➔
+                </button>
+              </div>
+            ` : ''}
+
             <!-- รายการครูที่ลา -->
             <div class="mt-5">
               <div class="flex items-center justify-between mb-3.5">
@@ -531,18 +559,35 @@
               </div>`
             : `<button type="button" class="sub-date-month-title" data-calendar-action="toggle-month-year" aria-label="เลือกเดือนและปี">${monthLabel} ${year}<span aria-hidden="true">▾</span></button>`;
 
+          // รวบรวมวันที่ที่มีประวัติการจัดสอนแทนบันทึกไว้แล้ว
+          const recordedDatesMap = new Map();
+          (cachedSubstitutions || []).forEach(r => {
+            if (r && r.date && r.absentTeacher) {
+              if (!recordedDatesMap.has(r.date)) {
+                recordedDatesMap.set(r.date, new Set());
+              }
+              recordedDatesMap.get(r.date).add(String(r.absentTeacher).trim());
+            }
+          });
+
           const dayButtons = Array.from({ length: 42 }, (_, index) => {
             const cellDate = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index, 12);
             const isoDate = toLocalISODate(cellDate);
             const inMonth = cellDate.getMonth() === month;
+            const recordedTeachers = recordedDatesMap.get(isoDate);
+            const hasRecord = Boolean(recordedTeachers && recordedTeachers.size > 0);
             const dayClasses = [
               'sub-date-day',
               inMonth ? '' : 'is-outside-month',
+              hasRecord ? 'has-record' : '',
               isoDate === todayIso ? 'is-today' : '',
               isoDate === selectedIso ? 'is-selected' : ''
             ].filter(Boolean).join(' ');
             const cellMonthLabel = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { month: 'long' }).format(cellDate);
-            return `<button type="button" class="${dayClasses}" data-calendar-date="${isoDate}" aria-label="${cellDate.getDate()} ${cellMonthLabel} ${cellDate.getFullYear()}" ${isoDate === selectedIso ? 'aria-pressed="true"' : ''}>${cellDate.getDate()}</button>`;
+            const recordTooltip = hasRecord
+              ? `จัดสอนแทนแล้ว ${recordedTeachers.size} ท่าน (${Array.from(recordedTeachers).join(', ')})`
+              : '';
+            return `<button type="button" class="${dayClasses}" data-calendar-date="${isoDate}" ${recordTooltip ? `title="${escapeAttr(recordTooltip)}"` : ''} aria-label="${cellDate.getDate()} ${cellMonthLabel} ${cellDate.getFullYear()}${recordTooltip ? ' - ' + escapeAttr(recordTooltip) : ''}" ${isoDate === selectedIso ? 'aria-pressed="true"' : ''}><span>${cellDate.getDate()}</span>${hasRecord ? '<span class="sub-date-record-dot" aria-hidden="true"></span>' : ''}</button>`;
           }).join('');
 
           dateCalendar.innerHTML = `
@@ -556,7 +601,10 @@
             <div class="sub-date-calendar-weekdays">${weekdays.map(day => `<span>${day}</span>`).join('')}</div>
             <div class="sub-date-calendar-grid">${dayButtons}</div>
             <div class="sub-date-calendar-footer">
-              <span class="sub-date-today-hint">วันนี้ ${formatDatePickerLabel(new Date())}</span>
+              <div class="flex flex-col gap-0.5 text-left">
+                <span class="sub-date-recorded-legend"><span class="sub-date-recorded-swatch"></span>มีประวัติจัดสอนแทน</span>
+                <span class="sub-date-today-hint">วันนี้ ${formatDatePickerLabel(new Date())}</span>
+              </div>
               <button type="button" data-calendar-action="today">วันนี้</button>
             </div>`;
         };
@@ -631,6 +679,19 @@
       if (btnViewTimetable) {
         btnViewTimetable.addEventListener('click', () => {
           openDayTimetableModal(dateInfo.dayOfWeek);
+        });
+      }
+
+      const btnJumpMonday = document.getElementById('btn-jump-next-monday');
+      if (btnJumpMonday) {
+        btnJumpMonday.addEventListener('click', () => {
+          const nextMon = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 12, 0, 0);
+          const dayOfW = nextMon.getDay();
+          const addDays = dayOfW === 6 ? 2 : (dayOfW === 0 ? 1 : 0);
+          nextMon.setDate(nextMon.getDate() + addDays);
+          currentDate = nextMon;
+          loadSavedSubstitutionsForCurrentDate();
+          renderSubstituteUI();
         });
       }
 
@@ -914,12 +975,12 @@
 
                       <!-- Row 2: วิชา และ ห้องเรียน (compact inline inputs) -->
                       <div class="flex items-center gap-1.5 text-xs">
-                        <input type="text" value="${period.subject || ''}" placeholder="วิชา..." 
+                        <input type="text" value="${escapeAttr(period.subject || '')}" placeholder="วิชา..." 
                           class="period-subject-input flex-1 min-w-0 font-bold ${isSelf ? 'text-emerald-950 bg-white/90 border-emerald-300' : (isAssigned ? 'text-amber-950 bg-white border-amber-300 focus:border-amber-500' : 'text-slate-800 bg-slate-50/70 hover:bg-white border-slate-200 focus:border-indigo-500')} focus:bg-white border hover:border-slate-300 rounded-lg px-2 py-0.5 outline-none transition-all text-xs"
-                          data-index="${index}" data-period="${period.periodId}" title="${period.subject || ''}">
-                        <input type="text" value="${period.room || ''}" placeholder="ห้อง..." 
+                          data-index="${index}" data-period="${period.periodId}" title="${escapeAttr(period.subject || '')}">
+                        <input type="text" value="${escapeAttr(period.room || '')}" placeholder="ห้อง..." 
                           class="period-room-input w-20 ${isSelf ? 'text-emerald-800 bg-white/90 border-emerald-300' : (isAssigned ? 'text-amber-900 bg-white border-amber-300 focus:border-amber-500' : 'text-slate-600 bg-slate-50/70 hover:bg-white border-slate-200 focus:border-indigo-500')} focus:bg-white border hover:border-slate-300 rounded-lg px-1.5 py-0.5 outline-none transition-all text-[11px] text-center"
-                          data-index="${index}" data-period="${period.periodId}" title="${period.room || 'ห้องเรียน'}">
+                          data-index="${index}" data-period="${period.periodId}" title="${escapeAttr(period.room || 'ห้องเรียน')}">
                       </div>
 
                       <!-- Row 3: เลือกครูสอนแทน -->
@@ -1374,7 +1435,7 @@
         ctx.save();
         ctx.translate(25, 150);
         ctx.rotate(-Math.PI / 2);
-        ctx.font = 'bold 32px "Sarabun", "TH Sarabun New", sans-serif';
+        ctx.font = 'bold 32px "TH Sarabun PSK", "THSarabunPSK", "TH Sarabun New", "Sarabun", sans-serif';
         ctx.fillStyle = '#000000';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1458,33 +1519,33 @@
       }
 
       const rawLogoH = Number(settings.logoHeight);
-      const docLogoHeight = (rawLogoH && rawLogoH >= 80 && rawLogoH !== 150) ? rawLogoH : 120;
+      const docLogoHeight = (rawLogoH && rawLogoH >= 50 && rawLogoH <= 200) ? rawLogoH : 120;
 
       return `
-        <div class="a4-page-preview flex flex-col ${pageTeachers.length === 1 ? 'single-teacher-page' : 'justify-between'}" id="doc-page-${pageIdx + 1}">
+        <div class="a4-page-preview flex flex-col justify-start" id="doc-page-${pageIdx + 1}">
           
           <div>
             ${settings.logoUrl ? `
-              <div class="text-center mb-2">
-                <img src="${settings.logoUrl}" alt="ตราสัญลักษณ์โรงเรียน" style="height: ${docLogoHeight}px; max-width: 260px;" class="object-contain mx-auto">
+              <div class="text-center mb-1">
+                <img src="${settings.logoUrl}" alt="ตราสัญลักษณ์โรงเรียน" style="height: ${docLogoHeight}px; max-width: 240px;" class="object-contain mx-auto">
               </div>
             ` : ''}
             <div class="text-center">
-              <h1 class="text-[17px] font-bold tracking-tight">${settings.docTitle}</h1>
+              <h1 class="text-[16pt] font-bold leading-normal" style="letter-spacing: normal !important;">${settings.docTitle}</h1>
             </div>
 
-            <div class="flex justify-end mt-2 text-[14.5px] leading-[1.5]">
-              <div class="text-left">
-                <div>${settings.schoolName} ${settings.subdistrict}</div>
-                <div>${settings.district} ${settings.province} ${settings.postalCode}</div>
+            <div class="flex justify-end mt-2.5 text-[16pt] leading-[1.2]">
+              <div class="text-left" style="white-space: nowrap;">
+                <div style="white-space: nowrap;">${settings.schoolName} ${settings.subdistrict}</div>
+                <div style="white-space: nowrap;">${settings.district} ${settings.province} ${settings.postalCode}</div>
               </div>
             </div>
 
-            <div class="text-[14.5px] mt-2.5 leading-[1.5] font-normal" style="margin-left: 50%;">
-              <span>วันที่ ${dateInfo.day} เดือน ${dateInfo.month} พ.ศ. ${dateInfo.year}</span>
+            <div class="text-[16pt] mt-2.5 leading-[1.2] font-normal" style="margin-left: 50%; white-space: nowrap;">
+              <span style="white-space: nowrap;">วันที่ ${dateInfo.day} เดือน ${dateInfo.month} พ.ศ. ${dateInfo.year}</span>
             </div>
 
-            <div class="text-[14.5px] mt-2.5 leading-[1.5] space-y-1">
+            <div class="text-[16pt] mt-2.5 leading-[1.2] space-y-0.5">
               <div class="flex items-baseline">
                 <span class="font-bold shrink-0" style="width: 15mm; min-width: 15mm;">เรื่อง</span>
                 <span class="doc-subject-text flex-1 outline-none hover:bg-amber-50/70 focus:bg-amber-50/70 rounded transition-colors" contenteditable="true" title="คลิกเพื่อพิมพ์แก้ไขข้อความหัวข้อเรื่องได้โดยตรง">${pageDocSubject}</span>
@@ -1495,45 +1556,45 @@
               </div>
             </div>
 
-            <div class="text-[14.5px] mt-2.5 leading-[1.5] text-justify" style="text-indent: 15mm;">
+            <div class="text-[16pt] mt-3 leading-[1.2]" style="text-indent: 15mm;">
               ด้วย ในวันที่ ${dateInfo.day} เดือน ${dateInfo.month} พ.ศ. ${dateInfo.year} ${settings.schoolName} มีคุณครู รายชื่อต่อไปนี้
             </div>
 
-            <div class="mt-2.5 space-y-2.5">
+            <div class="mt-1 space-y-1">
               ${pageTeachers.map((t, idx) => {
                 const globalIdx = (pageIdx * 2) + idx + 1;
                 return `
                   <div>
-                    <div class="text-[14.5px] font-bold leading-[1.5]" style="padding-left: 20mm;">${globalIdx}. ${t.teacherName}</div>
-                    <div class="text-[14px] leading-[1.5] mt-0.5 space-x-4" style="padding-left: 25mm;">
-                      <span>ได้ขออนุญาต</span>
-                      <span>(${t.leaveType === 'ไปราชการ' ? ' ✓ ' : '&nbsp;&nbsp;&nbsp;&nbsp;'}) ไปราชการ</span>
-                      <span>(${t.leaveType === 'ลากิจ' ? ' ✓ ' : '&nbsp;&nbsp;&nbsp;&nbsp;'}) ลากิจ</span>
-                      <span>(${t.leaveType === 'ลาป่วย' ? ' ✓ ' : '&nbsp;&nbsp;&nbsp;&nbsp;'}) ลาป่วย</span>
+                    <div class="text-[16pt] font-bold leading-[1.2]" style="padding-left: 20mm;">${globalIdx}. ${t.teacherName}</div>
+                    <div class="text-[15pt] leading-[1.2] flex items-center space-x-4" style="padding-left: 25mm; white-space: nowrap;">
+                      <span style="white-space: nowrap;">ได้ขออนุญาต</span>
+                      <span style="white-space: nowrap;">(${t.leaveType === 'ไปราชการ' ? ' ✓ ' : '&nbsp;&nbsp;&nbsp;&nbsp;'}) ไปราชการ</span>
+                      <span style="white-space: nowrap;">(${t.leaveType === 'ลากิจ' ? ' ✓ ' : '&nbsp;&nbsp;&nbsp;&nbsp;'}) ลากิจ</span>
+                      <span style="white-space: nowrap;">(${t.leaveType === 'ลาป่วย' ? ' ✓ ' : '&nbsp;&nbsp;&nbsp;&nbsp;'}) ลาป่วย</span>
                     </div>
                   </div>
                 `;
               }).join('')}
             </div>
 
-            <div class="text-[14.5px] mt-2.5 leading-[1.5] text-justify" style="text-indent: 15mm;">
+            <div class="text-[16pt] mt-1 leading-[1.2]" style="text-indent: 15mm;">
               ฉะนั้น เพื่อไม่ให้เกิดผลเสียต่อการจัดกิจกรรมการเรียนการสอน จึงมอบหมายให้ดำเนินการจัดกิจกรรม<br>การเรียนการสอนแทน ดังต่อไปนี้
             </div>
 
-            <div class="mt-2.5 space-y-3">
+            <div class="mt-2 space-y-4">
               ${pageTeachers.map((t) => {
                 const getPeriodSubCell = (pId) => {
                   const p = t.periods && t.periods[pId];
                   if (!p) return '';
                   if (p.isSelf) {
-                    return '<span style="font-size: 10px; font-weight: normal; color: #475569;">(สอนเอง)</span>';
+                    return '<span style="font-size: 11pt; font-weight: normal; color: #475569;">(สอนเอง)</span>';
                   }
                   return formatTeacherNameForTable(p.substituteTeacher || '');
                 };
                 const getPeriodAckCell = (pId) => {
                   const p = t.periods && t.periods[pId];
                   if (p && p.isSelf) {
-                    return '<div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 52px; font-size: 11px; color: #94a3b8;">-</div>';
+                    return '<span style="font-size: 12pt; color: #94a3b8; font-weight: bold;">-</span>';
                   }
                   return '';
                 };
@@ -1541,149 +1602,145 @@
                 return `
                   <table class="gov-table" style="table-layout: fixed; width: 100%;">
                     <tbody>
-                      <tr style="height: 32px;">
-                        <th style="width: 15%; padding: 4px 2px !important; vertical-align: middle !important;">ชื่อครู<br>ประจำวิชา</th>
-                        <th style="width: 13%; padding: 4px 2px !important; vertical-align: middle !important;">รายละเอียด</th>
-                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(1)}</th>
-                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(2)}</th>
-                        <th style="width: 11.5%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(3)}</th>
-                        <th class="cell-lunch-break" style="width: 4%;" rowspan="5">
-                          <div style="display: flex; align-items: center; justify-content: center; height: 100%; min-height: 154px;">
-                            <img src="${getLunchBreakPng()}" style="width: 25px; height: 150px; display: block; margin: 0 auto; pointer-events: none;" draggable="false">
-                          </div>
+                      <tr style="height: 28px;">
+                        <th style="width: 15%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 12pt; line-height: 1.15;">ชื่อครู<br>ประจำวิชา</th>
+                        <th style="width: 13%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 12pt;">รายละเอียด</th>
+                        <th style="width: 11.5%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 11.5pt;">${getDocumentPeriodTime(1)}</th>
+                        <th style="width: 11.5%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 11.5pt;">${getDocumentPeriodTime(2)}</th>
+                        <th style="width: 11.5%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 11.5pt;">${getDocumentPeriodTime(3)}</th>
+                        <th class="cell-lunch-break" style="width: 4%; padding: 0 !important; vertical-align: middle !important; text-align: center;" rowspan="5">
+                          <img src="${getLunchBreakPng()}" style="width: 22px; height: 120px; display: block; margin: 0 auto; pointer-events: none;" draggable="false">
                         </th>
-                        <th style="width: 11.16%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(5)}</th>
-                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(6)}</th>
-                        <th style="width: 11.17%; padding: 4px 2px !important; vertical-align: middle !important;">${getDocumentPeriodTime(7)}</th>
+                        <th style="width: 11.16%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 11.5pt;">${getDocumentPeriodTime(5)}</th>
+                        <th style="width: 11.17%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 11.5pt;">${getDocumentPeriodTime(6)}</th>
+                        <th style="width: 11.17%; padding: 2px 2px !important; vertical-align: middle !important; font-size: 11.5pt;">${getDocumentPeriodTime(7)}</th>
                       </tr>
-                      <tr style="height: 38px;">
-                        <td rowspan="4" class="cell-teacher-name bg-white">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 154px; padding: 4px; text-align: center; font-weight: bold; font-size: 11.5px; line-height: 1.35;">
+                      <tr style="height: 32px;">
+                        <td rowspan="4" class="cell-teacher-name bg-white" style="vertical-align: middle !important; text-align: center; padding: 2px !important;">
+                          <div style="font-weight: bold; font-size: 12.5pt; line-height: 1.2; text-align: center; margin: 0 auto;">
                             ${formatTeacherNameForTable(t.teacherName)}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 38px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.2;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 32px; text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.15;">
                             วิชา
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${formatSubjectForTable((t.periods && t.periods[1]) ? t.periods[1].subject : '')}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${formatSubjectForTable((t.periods && t.periods[2]) ? t.periods[2].subject : '')}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${formatSubjectForTable((t.periods && t.periods[3]) ? t.periods[3].subject : '')}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${formatSubjectForTable((t.periods && t.periods[5]) ? t.periods[5].subject : '')}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${formatSubjectForTable((t.periods && t.periods[6]) ? t.periods[6].subject : '')}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 3px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${formatSubjectForTable((t.periods && t.periods[7]) ? t.periods[7].subject : '')}
                           </div>
                         </td>
                       </tr>
-                      <tr style="height: 26px;">
-                        <td style="height: 26px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.2;">
+                      <tr style="height: 24px;">
+                        <td style="height: 24px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 24px; text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.15;">
                             ห้อง
                           </div>
                         </td>
-                        <td style="height: 26px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                        <td style="height: 24px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 24px; font-size: 12pt; text-align: center;">
                             ${(t.periods && t.periods[1]) ? t.periods[1].room : ''}
                           </div>
                         </td>
-                        <td style="height: 26px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                        <td style="height: 24px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 24px; font-size: 12pt; text-align: center;">
                             ${(t.periods && t.periods[2]) ? t.periods[2].room : ''}
                           </div>
                         </td>
-                        <td style="height: 26px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                        <td style="height: 24px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 24px; font-size: 12pt; text-align: center;">
                             ${(t.periods && t.periods[3]) ? t.periods[3].room : ''}
                           </div>
                         </td>
-                        <td style="height: 26px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                        <td style="height: 24px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 24px; font-size: 12pt; text-align: center;">
                             ${(t.periods && t.periods[5]) ? t.periods[5].room : ''}
                           </div>
                         </td>
-                        <td style="height: 26px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                        <td style="height: 24px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 24px; font-size: 12pt; text-align: center;">
                             ${(t.periods && t.periods[6]) ? t.periods[6].room : ''}
                           </div>
                         </td>
-                        <td style="height: 26px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 26px; font-size: 11.5px; text-align: center;">
+                        <td style="height: 24px;">
+                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 24px; font-size: 12pt; text-align: center;">
                             ${(t.periods && t.periods[7]) ? t.periods[7].room : ''}
                           </div>
                         </td>
                       </tr>
-                      <tr style="height: 38px;">
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.15;">
+                      <tr style="height: 32px;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; text-align: center; font-weight: bold; font-size: 11pt; line-height: 1.1;">
                             <span>ชื่อครูที่เข้า</span><span>สอนแทน</span>
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${getPeriodSubCell(1)}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${getPeriodSubCell(2)}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${getPeriodSubCell(3)}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${getPeriodSubCell(5)}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${getPeriodSubCell(6)}
                           </div>
                         </td>
-                        <td style="height: 38px;">
-                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 38px; padding: 2px 2px; font-size: 11px; line-height: 1.25; text-align: center; word-break: break-word;">
+                        <td style="height: 32px;">
+                          <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; min-height: 32px; padding: 1px 2px; font-size: 11.5pt; line-height: 1.15; text-align: center; word-break: break-word;">
                             ${getPeriodSubCell(7)}
                           </div>
                         </td>
                       </tr>
-                      <tr style="height: 52px;">
-                        <td style="height: 52px;">
-                          <div style="display: flex; justify-content: center; align-items: center; height: 100%; min-height: 52px; text-align: center; font-weight: bold; font-size: 11px; line-height: 1.2;">
-                            รับทราบ
-                          </div>
+                      <tr style="height: 38px;">
+                        <td style="height: 38px; vertical-align: middle !important; text-align: center; font-weight: bold; font-size: 12pt; line-height: 1.15;">
+                          รับทราบ
                         </td>
-                        <td style="height: 52px;">${getPeriodAckCell(1)}</td>
-                        <td style="height: 52px;">${getPeriodAckCell(2)}</td>
-                        <td style="height: 52px;">${getPeriodAckCell(3)}</td>
-                        <td style="height: 52px;">${getPeriodAckCell(5)}</td>
-                        <td style="height: 52px;">${getPeriodAckCell(6)}</td>
-                        <td style="height: 52px;">${getPeriodAckCell(7)}</td>
+                        <td style="height: 38px; vertical-align: middle !important; text-align: center;">${getPeriodAckCell(1)}</td>
+                        <td style="height: 38px; vertical-align: middle !important; text-align: center;">${getPeriodAckCell(2)}</td>
+                        <td style="height: 38px; vertical-align: middle !important; text-align: center;">${getPeriodAckCell(3)}</td>
+                        <td style="height: 38px; vertical-align: middle !important; text-align: center;">${getPeriodAckCell(5)}</td>
+                        <td style="height: 38px; vertical-align: middle !important; text-align: center;">${getPeriodAckCell(6)}</td>
+                        <td style="height: 38px; vertical-align: middle !important; text-align: center;">${getPeriodAckCell(7)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1692,26 +1749,26 @@
             </div>
           </div>
 
-          <div class="mt-5 pt-2 text-[14px] flex justify-between items-start">
-            <div class="text-center w-[48%] leading-relaxed">
-              <div class="h-6"></div>
-              <div class="mt-8">
+          <div class="mt-5 text-[16pt] flex justify-between items-start">
+            <div class="text-center w-[48%] leading-[1.25]">
+              <div class="h-5"></div>
+              <div class="mt-7" style="white-space: nowrap;">
                 ${settings.academicHeadRank ? settings.academicHeadRank : 'ลงชื่อ'}.......................................................
               </div>
-              <div class="font-bold">(${settings.academicHeadName})</div>
-              <div>${settings.academicHeadPosition}</div>
+              <div class="font-bold mt-1" style="white-space: nowrap;">(${settings.academicHeadName})</div>
+              <div style="white-space: nowrap;">${settings.academicHeadPosition}</div>
             </div>
 
-            <div class="text-center w-[48%] leading-relaxed">
-              <div class="space-x-8 text-[14px] h-6 flex items-center justify-center">
-                <span>☐ อนุญาต</span>
-                <span>☐ ไม่อนุญาต</span>
+            <div class="text-center w-[48%] leading-[1.25]">
+              <div class="text-[16pt] h-5 flex items-center justify-center gap-6" style="white-space: nowrap;">
+                <span style="white-space: nowrap;">☐&nbsp;อนุญาต</span>
+                <span style="white-space: nowrap;">☐&nbsp;ไม่อนุญาต</span>
               </div>
-              <div class="mt-8">
+              <div class="mt-7" style="white-space: nowrap;">
                 ${settings.directorRank ? settings.directorRank : 'ลงชื่อ'}.......................................................
               </div>
-              <div class="font-bold">(${settings.directorName})</div>
-              <div>${settings.directorPosition}</div>
+              <div class="font-bold mt-1" style="white-space: nowrap;">(${settings.directorName})</div>
+              <div style="white-space: nowrap;">${settings.directorPosition}</div>
             </div>
           </div>
 
@@ -1987,20 +2044,251 @@
       btnSaveImage.dataset.hasListener = "true";
       btnSaveImage.addEventListener('click', saveOfficialDocumentAsImage);
     }
+
+    const btnSavePdf = document.getElementById('btn-save-pdf');
+    if (btnSavePdf && !btnSavePdf.dataset.hasPdfListener) {
+      btnSavePdf.dataset.hasPdfListener = "true";
+      btnSavePdf.addEventListener('click', (e) => {
+        e.preventDefault();
+        saveOfficialDocumentAsPdf();
+      });
+    }
   }
 
-  async function saveOfficialDocumentAsImage() {
+  let isGeneratingPdf = false;
+  const DEFAULT_PDF_BTN_HTML = `<i data-lucide="file-down" class="w-4 h-4"></i><span>PDF</span>`;
+
+  async function saveOfficialDocumentAsPdf() {
+    if (isGeneratingPdf) {
+      console.warn("PDF generation already in progress...");
+      return;
+    }
+    isGeneratingPdf = true;
+
     const previewContent = document.getElementById('pdf-preview-content');
-    if (!previewContent) return;
+    if (!previewContent) {
+      isGeneratingPdf = false;
+      return;
+    }
+
+    const pages = previewContent.querySelectorAll('.a4-page-preview');
+    if (pages.length === 0) {
+      showToast("ไม่พบหน้าเอกสารสำหรับสร้างไฟล์ PDF", "warning");
+      isGeneratingPdf = false;
+      return;
+    }
+
+    const btnSavePdf = document.getElementById('btn-save-pdf');
+    if (btnSavePdf) {
+      btnSavePdf.disabled = true;
+      btnSavePdf.classList.add('opacity-75');
+      btnSavePdf.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>กำลังสร้าง PDF...</span>`;
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    try {
+      // 1. รอฟอนต์ TH Sarabun PSK โหลดพร้อม 100%
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+
+      // 2. ตรวจสอบเอนจิน jsPDF (offline)
+      let hasJsPdf = (typeof window.jspdf !== 'undefined' && typeof window.jspdf.jsPDF === 'function') || (typeof window.jsPDF === 'function');
+      if (!hasJsPdf) {
+        try {
+          await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = 'js/jspdf.umd.min.js';
+            script.onload = () => {
+              hasJsPdf = (typeof window.jspdf !== 'undefined' && typeof window.jspdf.jsPDF === 'function') || (typeof window.jsPDF === 'function');
+              resolve();
+            };
+            script.onerror = () => resolve();
+            document.head.appendChild(script);
+          });
+        } catch (e) {}
+      }
+
+      if (!hasJsPdf) {
+        throw new Error("ไม่สามารถโหลดโมดูล jsPDF ได้ กรุณารีเฟรชหน้าเว็บ");
+      }
+
+      // 3. ตรวจสอบเอนจิน modern-screenshot
+      let hasModernScreenshot = typeof modernScreenshot !== 'undefined' && typeof modernScreenshot.domToPng === 'function';
+      if (!hasModernScreenshot) {
+        try {
+          await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = 'js/modern-screenshot.js';
+            script.onload = () => {
+              hasModernScreenshot = typeof modernScreenshot !== 'undefined' && typeof modernScreenshot.domToPng === 'function';
+              resolve();
+            };
+            script.onerror = () => resolve();
+            document.head.appendChild(script);
+          });
+        } catch (e) {}
+      }
+
+      const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      const pdf = new jsPDFConstructor({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
+
+      const dateInfo = formatThaiDate(currentDate);
+      const thaiDateSlug = `${dateInfo.day}_${dateInfo.month}_${dateInfo.year}`;
+
+      for (let i = 0; i < pages.length; i++) {
+        const pageElem = pages[i];
+        let dataUrl = '';
+
+        // ดึงหน้ากระดาษโคลนออกมาที่กล่องอิสระนอก Modal ก่อนวาด เพื่อไม่ให้ติด Scroll และ zoom-in-95 ของ Modal
+        const isolatedContainer = document.createElement('div');
+        isolatedContainer.style.position = 'fixed';
+        isolatedContainer.style.left = '-9999px';
+        isolatedContainer.style.top = '0';
+        isolatedContainer.style.width = '210mm';
+        isolatedContainer.style.height = '297mm';
+        isolatedContainer.style.overflow = 'hidden';
+        isolatedContainer.style.zIndex = '-9999';
+        isolatedContainer.style.background = '#ffffff';
+
+        const pageClone = pageElem.cloneNode(true);
+        pageClone.style.boxShadow = 'none';
+        pageClone.style.margin = '0 auto';
+        pageClone.style.transform = 'none';
+        pageClone.style.width = '210mm';
+        pageClone.style.height = '297mm';
+        pageClone.style.maxHeight = '297mm';
+        pageClone.style.boxSizing = 'border-box';
+        pageClone.style.overflow = 'hidden';
+        isolatedContainer.appendChild(pageClone);
+        document.body.appendChild(isolatedContainer);
+
+        try {
+          if (hasModernScreenshot) {
+            dataUrl = await modernScreenshot.domToPng(pageClone, {
+              scale: 2,
+              backgroundColor: '#ffffff'
+            });
+          } else if (typeof html2canvas !== 'undefined') {
+            const canvas = await html2canvas(pageClone, {
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              logging: false,
+              scrollX: 0,
+              scrollY: 0,
+              onclone: (clonedDoc) => {
+                const clonedPages = clonedDoc.querySelectorAll('.a4-page-preview');
+                const targetPage = clonedPages[clonedPages.length - 1] || clonedPages[0];
+                if (targetPage) {
+                  clonedDoc.body.innerHTML = '';
+                  clonedDoc.body.style.margin = '0';
+                  clonedDoc.body.style.padding = '0';
+                  clonedDoc.body.style.background = '#ffffff';
+                  targetPage.style.boxShadow = 'none';
+                  targetPage.style.margin = '0 auto';
+                  targetPage.style.transform = 'none';
+                  targetPage.style.fontFamily = "'TH Sarabun PSK', 'THSarabunPSK', 'TH Sarabun New', 'Sarabun', sans-serif";
+                  clonedDoc.body.appendChild(targetPage);
+                }
+              }
+            });
+            dataUrl = canvas.toDataURL('image/png');
+          }
+        } finally {
+          if (isolatedContainer.parentNode) {
+            isolatedContainer.parentNode.removeChild(isolatedContainer);
+          }
+        }
+
+        if (dataUrl) {
+          if (i > 0) {
+            pdf.addPage('a4', 'p');
+          }
+          // บันทึกลงหน้ากระดาษ A4 (210mm x 297mm) เป๊ะ ไม่มีล้น
+          pdf.addImage(dataUrl, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+        }
+
+        if (i < pages.length - 1) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
+      const fileName = `แบบบันทึกการมอบหมายงานสอนแทน_${thaiDateSlug}.pdf`;
+
+      // ดาวน์โหลดไฟล์ PDF โดยตรงผ่าน Blob และ <a> (เสถียรที่สุด ไม่ถูกบล็อก และชื่อไฟล์ภาษาไทยไม่เพี้ยน)
+      let downloadedViaBlob = false;
+      try {
+        const pdfBlob = pdf.output('blob');
+        if (pdfBlob && pdfBlob.size > 0) {
+          const blobUrl = URL.createObjectURL(pdfBlob);
+          const downloadLink = document.createElement('a');
+          downloadLink.style.display = 'none';
+          downloadLink.href = blobUrl;
+          downloadLink.download = fileName;
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          downloadedViaBlob = true;
+          setTimeout(() => {
+            if (downloadLink.parentNode) {
+              downloadLink.parentNode.removeChild(downloadLink);
+            }
+            URL.revokeObjectURL(blobUrl);
+          }, 10000);
+        }
+      } catch (blobErr) {
+        console.warn("Direct blob download error, falling back to pdf.save:", blobErr);
+      }
+
+      if (!downloadedViaBlob) {
+        pdf.save(fileName);
+      }
+
+      showToast(`ดาวน์โหลดไฟล์ PDF เรียบร้อยแล้วครับ (${pages.length} หน้า)`, "success");
+    } catch (err) {
+      console.error("Save PDF error:", err);
+      showToast("เกิดข้อผิดพลาดในการสร้างไฟล์ PDF: " + (err.message || err), "error");
+    } finally {
+      isGeneratingPdf = false;
+      if (btnSavePdf) {
+        btnSavePdf.disabled = false;
+        btnSavePdf.classList.remove('opacity-75');
+        btnSavePdf.innerHTML = DEFAULT_PDF_BTN_HTML;
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
+  }
+
+  let isSavingImage = false;
+  const DEFAULT_IMG_BTN_HTML = `<i data-lucide="image" class="w-4 h-4"></i><span>บันทึกภาพ</span>`;
+
+  async function saveOfficialDocumentAsImage() {
+    if (isSavingImage) {
+      console.warn("Image saving already in progress...");
+      return;
+    }
+    isSavingImage = true;
+
+    const previewContent = document.getElementById('pdf-preview-content');
+    if (!previewContent) {
+      isSavingImage = false;
+      return;
+    }
 
     const pages = previewContent.querySelectorAll('.a4-page-preview');
     if (pages.length === 0) {
       showToast("ไม่พบหน้าเอกสารสำหรับบันทึกภาพ", "warning");
+      isSavingImage = false;
       return;
     }
 
     const btnSaveImg = document.getElementById('btn-save-image');
-    const originalHtml = btnSaveImg ? btnSaveImg.innerHTML : '';
     if (btnSaveImg) {
       btnSaveImg.disabled = true;
       btnSaveImg.classList.add('opacity-75');
@@ -2009,7 +2297,30 @@
     }
 
     try {
-      if (typeof html2canvas === 'undefined') {
+      // 1. รอฟอนต์ TH Sarabun PSK โหลดพร้อม 100%
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+
+      // 2. ตรวจสอบเอนจิน modern-screenshot (SVG foreignObject)
+      let hasModernScreenshot = typeof modernScreenshot !== 'undefined' && typeof modernScreenshot.domToPng === 'function';
+      if (!hasModernScreenshot) {
+        try {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'js/modern-screenshot.js';
+            script.onload = () => {
+              hasModernScreenshot = typeof modernScreenshot !== 'undefined' && typeof modernScreenshot.domToPng === 'function';
+              resolve();
+            };
+            script.onerror = () => resolve(); // fallback ต่อไป
+            document.head.appendChild(script);
+          });
+        } catch (e) {}
+      }
+
+      // Fallback: html2canvas
+      if (!hasModernScreenshot && typeof html2canvas === 'undefined') {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script');
           script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
@@ -2024,30 +2335,82 @@
 
       for (let i = 0; i < pages.length; i++) {
         const pageElem = pages[i];
+        let dataUrl = '';
+        let blob = null;
 
-        const canvas = await html2canvas(pageElem, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          scrollX: 0,
-          scrollY: 0,
-          onclone: (clonedDoc) => {
-            clonedDoc.querySelectorAll('.a4-page-preview').forEach(p => {
-              p.style.boxShadow = 'none';
-              p.style.margin = '0 auto';
+        // ดึงหน้ากระดาษโคลนออกมาที่กล่องอิสระนอก Modal ก่อนวาด เพื่อไม่ให้ติด Scroll และ zoom-in-95 ของ Modal
+        const isolatedContainer = document.createElement('div');
+        isolatedContainer.style.position = 'fixed';
+        isolatedContainer.style.left = '-9999px';
+        isolatedContainer.style.top = '0';
+        isolatedContainer.style.width = '210mm';
+        isolatedContainer.style.height = '297mm';
+        isolatedContainer.style.overflow = 'hidden';
+        isolatedContainer.style.zIndex = '-9999';
+        isolatedContainer.style.background = '#ffffff';
+
+        const pageClone = pageElem.cloneNode(true);
+        pageClone.style.boxShadow = 'none';
+        pageClone.style.margin = '0 auto';
+        pageClone.style.transform = 'none';
+        pageClone.style.width = '210mm';
+        pageClone.style.height = '297mm';
+        pageClone.style.maxHeight = '297mm';
+        pageClone.style.boxSizing = 'border-box';
+        pageClone.style.overflow = 'hidden';
+        isolatedContainer.appendChild(pageClone);
+        document.body.appendChild(isolatedContainer);
+
+        try {
+          if (hasModernScreenshot) {
+            // ใช้เอนจิน modern-screenshot (SVG foreignObject) วาดตรงจากเบราว์เซอร์ คมชัด 100% สระไม่ลอย ตารางไม่เพี้ยน
+            dataUrl = await modernScreenshot.domToPng(pageClone, {
+              scale: 2,
+              backgroundColor: '#ffffff'
             });
-            clonedDoc.querySelectorAll('.gov-table').forEach(table => {
-              table.style.border = '1px solid #000000';
-              table.style.borderCollapse = 'collapse';
+          } else if (typeof html2canvas !== 'undefined') {
+            const canvas = await html2canvas(pageClone, {
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              logging: false,
+              scrollX: 0,
+              scrollY: 0,
+              onclone: (clonedDoc) => {
+                // ดึงหน้ากระดาษโคลนออกมาที่ clonedDoc.body ตรงๆ
+                const clonedPages = clonedDoc.querySelectorAll('.a4-page-preview');
+                const targetPage = clonedPages[clonedPages.length - 1] || clonedPages[0];
+                if (targetPage) {
+                  clonedDoc.body.innerHTML = '';
+                  clonedDoc.body.style.margin = '0';
+                  clonedDoc.body.style.padding = '0';
+                  clonedDoc.body.style.background = '#ffffff';
+                  targetPage.style.boxShadow = 'none';
+                  targetPage.style.margin = '0 auto';
+                  targetPage.style.transform = 'none';
+                  targetPage.style.fontFamily = "'TH Sarabun PSK', 'THSarabunPSK', 'TH Sarabun New', 'Sarabun', sans-serif";
+                  clonedDoc.body.appendChild(targetPage);
+                }
+                clonedDoc.querySelectorAll('.gov-table').forEach(table => {
+                  table.style.border = '1px solid #000000';
+                  table.style.borderCollapse = 'collapse';
+                  table.style.fontFamily = "'TH Sarabun PSK', 'THSarabunPSK', 'TH Sarabun New', 'Sarabun', sans-serif";
+                });
+                clonedDoc.querySelectorAll('.cell-lunch-break').forEach(th => {
+                  th.style.border = '1px solid #000000';
+                  th.style.borderTop = '1px solid #000000';
+                  th.style.padding = '0';
+                });
+              }
             });
-            clonedDoc.querySelectorAll('.cell-lunch-break').forEach(th => {
-              th.style.border = '1px solid #000000';
-              th.style.borderTop = '1px solid #000000';
-            });
+            dataUrl = canvas.toDataURL('image/png');
           }
-        });
+        } finally {
+          if (isolatedContainer.parentNode) {
+            isolatedContainer.parentNode.removeChild(isolatedContainer);
+          }
+        }
 
         const fileName = pages.length > 1 
           ? `ตารางสอนแทน_${thaiDateSlug}_หน้า${i + 1}.png` 
@@ -2055,20 +2418,31 @@
 
         const link = document.createElement('a');
         link.download = fileName;
-        link.href = canvas.toDataURL('image/png');
+        link.href = dataUrl;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
 
         if (i === 0 && navigator.clipboard && typeof ClipboardItem !== 'undefined') {
           try {
-            canvas.toBlob(blob => {
-              if (blob) {
-                navigator.clipboard.write([
-                  new ClipboardItem({ 'image/png': blob })
-                ]).catch(() => {});
-              }
-            }, 'image/png');
+            if (hasModernScreenshot && typeof modernScreenshot.domToBlob === 'function') {
+              blob = await modernScreenshot.domToBlob(pageElem, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                style: {
+                  boxShadow: 'none',
+                  margin: '0 auto'
+                }
+              });
+            } else if (dataUrl) {
+              const res = await fetch(dataUrl);
+              blob = await res.blob();
+            }
+            if (blob) {
+              navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+              ]).catch(() => {});
+            }
           } catch (e) {}
         }
 
@@ -2082,10 +2456,11 @@
       console.error("Save image error:", err);
       showToast("เกิดข้อผิดพลาดในการบันทึกภาพ: " + (err.message || err), "error");
     } finally {
+      isSavingImage = false;
       if (btnSaveImg) {
         btnSaveImg.disabled = false;
         btnSaveImg.classList.remove('opacity-75');
-        btnSaveImg.innerHTML = originalHtml;
+        btnSaveImg.innerHTML = DEFAULT_IMG_BTN_HTML;
         if (window.lucide) window.lucide.createIcons();
       }
     }
@@ -2460,6 +2835,10 @@
 
   global.TeachSubstitute = {
     initSubstitutePage,
-    generateOfficialDocumentPagesHtml
+    generateOfficialDocumentPagesHtml,
+    saveOfficialDocumentAsImage,
+    saveOfficialDocumentAsPdf
   };
+  global.saveOfficialDocumentAsPdf = saveOfficialDocumentAsPdf;
+  global.saveOfficialDocumentAsImage = saveOfficialDocumentAsImage;
 })(typeof window !== 'undefined' ? window : this);

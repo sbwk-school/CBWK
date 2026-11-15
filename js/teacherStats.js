@@ -189,11 +189,21 @@
       list = list.filter(item => item.grade === selectedGradeFilter);
     }
 
-    // เรียงลำดับ: มากไปน้อย / น้อยไปมาก / ตามลำดับ
+    // เรียงลำดับตามตัวเลือก
     if (sortBy === 'subCountDesc') {
       list.sort((a, b) => b.subCount - a.subCount || a.originalIndex - b.originalIndex);
     } else if (sortBy === 'subCountAsc') {
       list.sort((a, b) => a.subCount - b.subCount || a.originalIndex - b.originalIndex);
+    } else if (sortBy === 'leaveTotalDesc') {
+      list.sort((a, b) => b.leaveCounts.total - a.leaveCounts.total || a.originalIndex - b.originalIndex);
+    } else if (sortBy === 'leaveTotalAsc') {
+      list.sort((a, b) => a.leaveCounts.total - b.leaveCounts.total || a.originalIndex - b.originalIndex);
+    } else if (sortBy === 'officialDutyDesc') {
+      list.sort((a, b) => b.leaveCounts.officialDuty - a.leaveCounts.officialDuty || a.originalIndex - b.originalIndex);
+    } else if (sortBy === 'personalDesc') {
+      list.sort((a, b) => b.leaveCounts.personal - a.leaveCounts.personal || a.originalIndex - b.originalIndex);
+    } else if (sortBy === 'sickDesc') {
+      list.sort((a, b) => b.leaveCounts.sick - a.leaveCounts.sick || a.originalIndex - b.originalIndex);
     } else if (sortBy === 'orderAsc') {
       list.sort((a, b) => a.originalIndex - b.originalIndex);
     }
@@ -242,9 +252,14 @@
                 <span class="text-xs font-semibold text-slate-500 whitespace-nowrap">เรียง:</span>
                 <select id="teacher-sort-select" 
                   class="w-full sm:w-auto bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer">
-                  <option value="subCountDesc" ${sortBy === 'subCountDesc' ? 'selected' : ''}>มากไปน้อย</option>
-                  <option value="subCountAsc" ${sortBy === 'subCountAsc' ? 'selected' : ''}>น้อยไปมาก</option>
-                  <option value="orderAsc" ${sortBy === 'orderAsc' ? 'selected' : ''}>ตามลำดับ</option>
+                  <option value="subCountDesc" ${sortBy === 'subCountDesc' ? 'selected' : ''}>สอนแทน: มากไปน้อย</option>
+                  <option value="subCountAsc" ${sortBy === 'subCountAsc' ? 'selected' : ''}>สอนแทน: น้อยไปมาก</option>
+                  <option value="leaveTotalDesc" ${sortBy === 'leaveTotalDesc' ? 'selected' : ''}>วันลารวม: มากไปน้อย</option>
+                  <option value="leaveTotalAsc" ${sortBy === 'leaveTotalAsc' ? 'selected' : ''}>วันลารวม: น้อยไปมาก</option>
+                  <option value="officialDutyDesc" ${sortBy === 'officialDutyDesc' ? 'selected' : ''}>ไปราชการ: มากที่สุด</option>
+                  <option value="personalDesc" ${sortBy === 'personalDesc' ? 'selected' : ''}>ลากิจ: มากที่สุด</option>
+                  <option value="sickDesc" ${sortBy === 'sickDesc' ? 'selected' : ''}>ลาป่วย: มากที่สุด</option>
+                  <option value="orderAsc" ${sortBy === 'orderAsc' ? 'selected' : ''}>ตามลำดับรายชื่อ</option>
                 </select>
               </div>
             </div>
@@ -836,6 +851,9 @@
                   renderTeacherStatsUI();
                   const updatedStatsMap = calculateTeacherStats();
                   openTeacherHistoryModal(teacherName, updatedStatsMap[teacherName] || createEmptyTeacherStat(teacherName));
+                  if (global.TeachApp && global.TeachApp.showToast) {
+                    global.TeachApp.showToast("ลบประวัติการลาเรียบร้อยแล้ว", "success");
+                  }
                 }
               });
             });

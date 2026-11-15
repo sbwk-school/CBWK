@@ -318,10 +318,6 @@
       window.print();
     }
 
-    if (btnSavePdf) {
-      btnSavePdf.addEventListener('click', openPrintDialog);
-    }
-
     if (btnPrintNow) {
       btnPrintNow.addEventListener('click', openPrintDialog);
     }

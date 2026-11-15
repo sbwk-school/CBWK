@@ -27,11 +27,20 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <!-- html2canvas (HTML DOM to Canvas / Image generator) -->
+  <!-- modern-screenshot (SVG foreignObject native browser renderer - 100% pixel-perfect) -->
+  <script src="js/modern-screenshot.js"></script>
+
+  <!-- jsPDF (Direct PDF generator - offline) -->
+  <script src="js/jspdf.umd.min.js"></script>
+
+  <!-- html2canvas (Fallback Image generator) -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
+  <!-- Embedded Thai Fonts (Sarabun & TH Sarabun New Base64 Data URI) -->
+  <link rel="stylesheet" href="css/fonts.css">
+
   <!-- Custom Styles & Print Styles -->
-  <link rel="stylesheet" href="css/style.css?v=5.0">
+  <link rel="stylesheet" href="css/style.css?v=5.2">
 
   <script>
     if (window.tailwind) {
@@ -40,7 +49,7 @@
           extend: {
             fontFamily: {
               sans: ['Prompt', 'sans-serif'],
-              doc: ['Sarabun', 'TH Sarabun New', 'sans-serif'],
+              doc: ['"TH Sarabun PSK"', 'THSarabunPSK', '"TH Sarabun New"', 'Sarabun', 'sans-serif'],
             }
           }
         }
@@ -172,10 +181,10 @@
             <span>บันทึกภาพ</span>
           </button>
 
-          <!-- 1. เปิดหน้าพิมพ์เพื่อบันทึกเป็น PDF -->
+          <!-- 1. บันทึกและดาวน์โหลดเป็นไฟล์ PDF โดยตรง (ไม่ต้องผ่านหน้าพิมพ์) -->
           <button id="btn-save-pdf" 
             class="px-3.5 sm:px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-            title="เปิดหน้าพิมพ์ แล้วเลือกบันทึกเป็น PDF">
+            title="บันทึกและดาวน์โหลดเป็นไฟล์ PDF ทันที (ไม่ต้องเปิดหน้าพิมพ์)">
             <i data-lucide="file-down" class="w-4 h-4"></i>
             <span>PDF</span>
           </button>
@@ -338,11 +347,11 @@
   </div>
 
   <!-- App Scripts in Order (Works seamlessly with file:/// and http(s)://) -->
-  <script src="js/data.js?v=3.7"></script>
-  <script src="js/firebaseClient.js?v=3.3"></script>
-  <script src="js/substitute.js?v=4.5"></script>
-  <script src="js/teacherStats.js?v=3.7"></script>
-  <script src="js/adminSheet.js?v=4.7"></script>
+  <script src="js/data.js?v=3.8"></script>
+  <script src="js/firebaseClient.js?v=3.4"></script>
+  <script src="js/substitute.js?v=4.6"></script>
+  <script src="js/teacherStats.js?v=3.8"></script>
+  <script src="js/adminSheet.js?v=4.8"></script>
   <script src="js/app.js?v=3.5"></script>
 </body>
 </html>

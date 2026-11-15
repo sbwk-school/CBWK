@@ -384,7 +384,7 @@
   function parseSubjectAndRoom(rawText) {
     if (!rawText || !rawText.trim()) return { subject: "", room: "" };
     const text = rawText.trim();
-    const roomRegex = /([ปม]\.*\s*\d+\s*(?:[\/-]\s*\d+)?)/;
+    const roomRegex = /([อปม]\.*\s*\d+\s*(?:[\/-]\s*\d+)?)/;
     const match = text.match(roomRegex);
     if (match) {
       const room = match[0].trim().replace(/\.{2,}/g, '.').replace(/\s+/g, '');

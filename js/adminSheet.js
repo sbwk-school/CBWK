@@ -18,13 +18,17 @@
     saveDayTimetable, 
     saveAllTimetables,
     getSubstitutions,
-    getFirebaseConfig, 
-    parseConfigInput, 
-    saveFirebaseConfig, 
-    testFirebaseConnection, 
-    seedAllDataToFirebase,
+    getFirebaseConfig,
     clearSubstitutionHistory
   } = global.TeachDatabase;
+
+  function escapeAttr(val) {
+    return String(val ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
 
   const {
     GRADE_BANDS = [
@@ -326,11 +330,19 @@
           </div>
 
           <div class="flex flex-wrap items-center justify-end gap-2">
-            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300/80 shadow-2xs">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span class="admin-cloud-label-full hidden sm:inline">เชื่อมต่อคลาวด์ Firebase แล้ว (arrange-c24b2)</span>
-              <span class="admin-cloud-label-compact sm:hidden">เชื่อมต่อแล้ว</span>
-            </span>
+            ${(typeof window.firebase !== 'undefined' && window.firebase.apps && window.firebase.apps.length > 0 && navigator.onLine !== false) ? `
+              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300/80 shadow-2xs">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="admin-cloud-label-full hidden sm:inline">เชื่อมต่อคลาวด์ Firebase แล้ว (${(config && config.projectId) || 'arrange-c24b2'})</span>
+                <span class="admin-cloud-label-compact sm:hidden">เชื่อมต่อแล้ว</span>
+              </span>
+            ` : `
+              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300/80 shadow-2xs">
+                <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                <span class="admin-cloud-label-full hidden sm:inline">โหมดออฟไลน์ / บันทึกในเครื่อง (LocalStorage)</span>
+                <span class="admin-cloud-label-compact sm:hidden">โหมดออฟไลน์</span>
+              </span>
+            `}
 
             <button id="btn-open-reset-confirm" type="button"
               class="btn-press hover-lift-sm inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200/80 transition-colors cursor-pointer shadow-2xs"
@@ -756,7 +768,7 @@
         );
 
         if (daySheetNames.length >= 2) {
-          rows = [];
+          rows = [["ลำดับ", "วัน", "รายชื่อครู", "คาบ 1", "คาบ 2", "คาบ 3", "คาบ 4", "คาบ 5", "คาบ 6", "คาบ 7"]];
           daySheetNames.forEach(sheetName => {
             const sheet = workbook.Sheets[sheetName];
             const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
@@ -767,14 +779,12 @@
             else if (sheetName.includes("พฤหัส")) matchedDay = "พฤหัสบดี";
             else if (sheetName.includes("ศุกร์")) matchedDay = "ศุกร์";
 
-            rawRows.forEach((r, idx) => {
-              if (idx === 0) {
-                if (rows.length === 0) rows.push(["ลำดับ", "วัน", "รายชื่อครู", "คาบ 1", "คาบ 2", "คาบ 3", "คาบ 4", "คาบ 5", "คาบ 6", "คาบ 7"]);
-              } else {
-                if (r && r.some(cell => String(cell).trim())) {
-                  rows.push([r[0] || "", matchedDay, r[1] || r[2] || "", ...(r.slice(2, 9))]);
-                }
-              }
+            const sheetAnalysis = analyzeScheduleRows(rawRows);
+            sheetAnalysis.teachers.forEach((tName, tIdx) => {
+              const pList = (sheetAnalysis.timetables[matchedDay] && sheetAnalysis.timetables[matchedDay][tName])
+                || (sheetAnalysis.timetables[selectedDay] && sheetAnalysis.timetables[selectedDay][tName])
+                || ["", "", "", "", "", "", ""];
+              rows.push([tIdx + 1, matchedDay, tName, ...pList.slice(0, 7)]);
             });
           });
         } else {
@@ -1091,7 +1101,7 @@
               <i data-lucide="upload" class="w-4 h-4"></i>
               <span>อัปโหลด Excel</span>
             </button>
-            <input type="file" id="input-upload-excel" accept=".xlsx, .xls" class="hidden" />
+            <input type="file" id="input-upload-excel" accept=".xlsx, .xls, .csv" class="hidden" />
           </div>
         </div>
 
@@ -1187,9 +1197,9 @@
                           ${band.key}
                         </span>
                         ${isSheetEditMode ? `
-                          <input type="text" value="${teacherName}" 
+                          <input type="text" value="${escapeAttr(teacherName)}" 
                             class="teacher-name-input sheet-cell-edit-input flex-1 py-1 px-2 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg shadow-2xs focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
-                            data-index="${tIdx}" data-oldname="${teacherName}">
+                            data-index="${tIdx}" data-oldname="${escapeAttr(teacherName)}">
                         ` : `
                           <span class="view-mode-cell font-bold text-slate-800 py-1 px-1.5 cursor-pointer hover:text-indigo-600 transition-colors"
                             data-tindex="${tIdx}" data-type="teacher" title="คลิกเพื่อแก้ไขตารางสอน">
@@ -1203,7 +1213,7 @@
                       return `
                         <td class="p-1 ${period.isBreak ? 'bg-amber-100/50' : band.cellBg}">
                           ${isSheetEditMode ? `
-                            <input type="text" value="${val}" 
+                            <input type="text" value="${escapeAttr(val)}" 
                               placeholder="${period.isBreak ? 'พักกลางวัน' : '-'}" 
                               class="grid-cell-input sheet-cell-edit-input w-full py-1.5 px-2 text-center text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg shadow-2xs hover:border-indigo-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
                               data-tindex="${tIdx}" data-pindex="${pIdx}">
@@ -1265,6 +1275,30 @@
       });
     }
 
+    function collectCurrentSheetEdits() {
+      if (!isSheetEditMode) return;
+      container.querySelectorAll('.teacher-name-input').forEach(input => {
+        const idx = parseInt(input.dataset.index);
+        const oldName = input.dataset.oldname || activeTeachers[idx];
+        const newName = input.value.trim();
+        if (!isNaN(idx) && newName && newName !== oldName) {
+          activeTeacherGrades[newName] = activeTeacherGrades[oldName] || "ป.1-3";
+          delete activeTeacherGrades[oldName];
+          activeTeachers[idx] = newName;
+          input.dataset.oldname = newName;
+        }
+      });
+      container.querySelectorAll('.grid-cell-input').forEach(input => {
+        const tIdx = parseInt(input.dataset.tindex);
+        const pIdx = parseInt(input.dataset.pindex);
+        if (!isNaN(tIdx) && !isNaN(pIdx)) {
+          if (!activeTimetables[selectedDay]) activeTimetables[selectedDay] = [];
+          if (!activeTimetables[selectedDay][tIdx]) activeTimetables[selectedDay][tIdx] = ["", "", "", "", "", "", ""];
+          activeTimetables[selectedDay][tIdx][pIdx] = input.value;
+        }
+      });
+    }
+
     // Click cell in View Mode to quickly enter Edit Mode and focus that cell
     if (!isSheetEditMode) {
       container.querySelectorAll('.view-mode-cell').forEach(cell => {
@@ -1275,6 +1309,7 @@
           isSheetEditMode = true;
           originalTimetablesSnapshot = JSON.parse(JSON.stringify(activeTimetables));
           originalTeachersSnapshot = [...activeTeachers];
+          originalTeachersSnapshot._grades = { ...activeTeacherGrades };
           renderSpreadsheetTab(container);
           setTimeout(() => {
             const input = isTeacher
@@ -1291,18 +1326,7 @@
 
     container.querySelectorAll('.sheet-day-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        if (isSheetEditMode) {
-          // Collect latest values before switching days
-          container.querySelectorAll('.grid-cell-input').forEach(input => {
-            const tIdx = parseInt(input.dataset.tindex);
-            const pIdx = parseInt(input.dataset.pindex);
-            if (!isNaN(tIdx) && !isNaN(pIdx)) {
-              if (!activeTimetables[selectedDay]) activeTimetables[selectedDay] = [];
-              if (!activeTimetables[selectedDay][tIdx]) activeTimetables[selectedDay][tIdx] = ["", "", "", "", "", "", ""];
-              activeTimetables[selectedDay][tIdx][pIdx] = input.value;
-            }
-          });
-        }
+        collectCurrentSheetEdits();
         selectedDay = e.currentTarget.dataset.day;
         renderSpreadsheetTab(container);
       });
@@ -1310,17 +1334,7 @@
 
     container.querySelectorAll('.sheet-grade-filter-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        if (isSheetEditMode) {
-          container.querySelectorAll('.grid-cell-input').forEach(input => {
-            const tIdx = parseInt(input.dataset.tindex);
-            const pIdx = parseInt(input.dataset.pindex);
-            if (!isNaN(tIdx) && !isNaN(pIdx)) {
-              if (!activeTimetables[selectedDay]) activeTimetables[selectedDay] = [];
-              if (!activeTimetables[selectedDay][tIdx]) activeTimetables[selectedDay][tIdx] = ["", "", "", "", "", "", ""];
-              activeTimetables[selectedDay][tIdx][pIdx] = input.value;
-            }
-          });
-        }
+        collectCurrentSheetEdits();
         sheetFilterGrade = e.currentTarget.dataset.grade;
         renderSpreadsheetTab(container);
       });
@@ -1689,7 +1703,6 @@
     const visibleTeachers = activeTeachers
       .map((name, origIdx) => ({ name, origIdx }))
       .filter(item => {
-        if (searchLower && !item.name.toLowerCase().includes(searchLower)) return false;
         if (teacherFilterGrade !== 'ALL') {
           const g = activeTeacherGrades[item.name] || 'ป.1-3';
           if (g !== teacherFilterGrade) return false;
@@ -1830,7 +1843,7 @@
 
             <div class="relative w-full sm:w-64">
               <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-              <input type="text" id="teacher-search-input" value="${teacherSearchQuery}" placeholder="ค้นหาชื่อคุณครู..."
+              <input type="text" id="admin-teacher-search-input" value="${escapeAttr(teacherSearchQuery)}" placeholder="ค้นหาชื่อคุณครู..."
                 class="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 shadow-2xs">
             </div>
           </div>
@@ -1862,8 +1875,9 @@
                     dotClass: 'bg-emerald-500', borderClass: 'border-l-emerald-500', cellBg: 'bg-emerald-50', rowHover: 'hover:bg-emerald-100/80', textClass: 'text-emerald-950' 
                   };
 
+                  const matchesSearch = !searchLower || teacherName.toLowerCase().includes(searchLower);
                   return `
-                    <tr class="${band.cellBg}/70 ${band.rowHover} transition-all ${band.borderClass} border-l-4">
+                    <tr class="admin-teacher-period-row ${band.cellBg}/70 ${band.rowHover} transition-all ${band.borderClass} border-l-4" style="${matchesSearch ? '' : 'display: none;'}">
                       <td class="text-center font-bold ${band.textClass} py-2.5 px-3">
                         ${origIdx + 1}
                       </td>
@@ -2000,13 +2014,13 @@
       });
     });
 
-    // Search teacher input (filter rows in-place without destroying input focus or breaking Thai IME)
-    const searchInput = container.querySelector('#teacher-search-input');
+    // Search teacher input (filter rows in-place without destroying input focus or losing rows on re-render)
+    const searchInput = container.querySelector('#admin-teacher-search-input');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         teacherSearchQuery = e.target.value;
         const qLower = teacherSearchQuery.trim().toLowerCase();
-        const rows = container.querySelectorAll('tbody tr');
+        const rows = container.querySelectorAll('tbody tr.admin-teacher-period-row');
         rows.forEach(tr => {
           const nameInput = tr.querySelector('.teacher-name-periods-input');
           if (!nameInput) return;
@@ -2599,7 +2613,7 @@
       logoSlider.addEventListener('input', (e) => {
         const val = parseInt(e.target.value) || 120;
         logoHeightVal.innerText = `${val} px`;
-        activeSettings.logoHeight = val;
+        if (typeof updateSchoolDirtyUI === 'function') updateSchoolDirtyUI();
       });
     }
 
@@ -2717,8 +2731,9 @@
       if (checkField('cfg-director-pos', s.directorPosition)) isDirty = true;
       if (checkField('cfg-doc-subject', s.docSubject)) isDirty = true;
       if (checkField('cfg-doc-dear', s.docDear)) isDirty = true;
-      const pinEl = document.getElementById('cfg-new-pin');
-      if (pinEl && pinEl.value.trim()) isDirty = true;
+      if (checkField('cfg-new-pin', getStoredPin())) isDirty = true;
+      const origLogoH = (s.logoHeight && s.logoHeight >= 80 && s.logoHeight !== 150) ? Number(s.logoHeight) : 120;
+      if (logoSlider && Number(logoSlider.value) !== origLogoH) isDirty = true;
 
       const saveBtns = container.querySelectorAll('.btn-save-school-action');
       saveBtns.forEach((b, idx) => {
